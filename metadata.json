@@ -1,0 +1,6 @@
+{
+  "name": "DocQR - Smart Cover & Drive QR Generator",
+  "description": "Generate professional document cover pages with embedded Google Drive public QR codes and share documents seamlessly via email.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
