@@ -76,6 +76,28 @@ class TypewriterAudio {
   }
 
   /**
+   * Play a subtle key click on button hover
+   */
+  public playHoverTick() {
+    try {
+      this.initContext();
+      if (!this.ctx) return;
+      const now = this.ctx.currentTime;
+      const osc = this.ctx.createOscillator();
+      const gain = this.ctx.createGain();
+      osc.type = 'sine';
+      osc.frequency.setValueAtTime(950, now);
+      osc.frequency.exponentialRampToValueAtTime(300, now + 0.018);
+      gain.gain.setValueAtTime(0.06, now);
+      gain.gain.exponentialRampToValueAtTime(0.001, now + 0.018);
+      osc.connect(gain);
+      gain.connect(this.ctx.destination);
+      osc.start(now);
+      osc.stop(now + 0.02);
+    } catch {}
+  }
+
+  /**
    * Play typewriter carriage return bell ding
    */
   public playBell() {

@@ -46,8 +46,10 @@ provider.setCustomParameters({
 
 // Flag to track sign-in in progress
 let isSigningIn = false;
-// In-memory token cache (never stored in localStorage)
-let cachedAccessToken: string | null = null;
+const SESSION_TOKEN_KEY = 'qrdrive_session_access_token';
+
+let cachedAccessToken: string | null =
+  typeof window !== 'undefined' ? sessionStorage.getItem(SESSION_TOKEN_KEY) : null;
 
 export const initAuth = (
   onAuthSuccess?: (user: User, token: string) => void,
@@ -55,14 +57,20 @@ export const initAuth = (
 ) => {
   return onAuthStateChanged(auth, async (user: User | null) => {
     if (user) {
-      if (cachedAccessToken) {
+      const stored = typeof window !== 'undefined' ? sessionStorage.getItem(SESSION_TOKEN_KEY) : null;
+      if (stored) {
+        cachedAccessToken = stored;
+        if (onAuthSuccess) onAuthSuccess(user, stored);
+      } else if (cachedAccessToken) {
         if (onAuthSuccess) onAuthSuccess(user, cachedAccessToken);
-      } else if (!isSigningIn) {
-        // Cached token lost on page refresh; user will need to reconnect to get fresh access token
+      } else {
         if (onAuthFailure) onAuthFailure();
       }
     } else {
       cachedAccessToken = null;
+      if (typeof window !== 'undefined') {
+        sessionStorage.removeItem(SESSION_TOKEN_KEY);
+      }
       if (onAuthFailure) onAuthFailure();
     }
   });
@@ -78,6 +86,9 @@ export const googleSignIn = async (): Promise<{ user: User; accessToken: string 
     }
 
     cachedAccessToken = credential.accessToken;
+    if (typeof window !== 'undefined') {
+      sessionStorage.setItem(SESSION_TOKEN_KEY, credential.accessToken);
+    }
     return { user: result.user, accessToken: cachedAccessToken };
   } catch (error) {
     console.error('Sign-in error:', error);
@@ -88,11 +99,21 @@ export const googleSignIn = async (): Promise<{ user: User; accessToken: string 
 };
 
 export const getAccessToken = async (): Promise<string | null> => {
+  if (!cachedAccessToken && typeof window !== 'undefined') {
+    cachedAccessToken = sessionStorage.getItem(SESSION_TOKEN_KEY);
+  }
   return cachedAccessToken;
 };
 
 export const setCachedToken = (token: string | null) => {
   cachedAccessToken = token;
+  if (typeof window !== 'undefined') {
+    if (token) {
+      sessionStorage.setItem(SESSION_TOKEN_KEY, token);
+    } else {
+      sessionStorage.removeItem(SESSION_TOKEN_KEY);
+    }
+  }
 };
 
 export const logout = async () => {
@@ -100,13 +121,16 @@ export const logout = async () => {
     await signOut(auth);
   } catch {}
   cachedAccessToken = null;
+  if (typeof window !== 'undefined') {
+    sessionStorage.removeItem(SESSION_TOKEN_KEY);
+  }
 };
 
 // Firestore document persistence with seamless local storage fallback
 const LOCAL_STORAGE_DOCS_KEY = 'docqr_saved_documents';
 
 export const saveDocumentRecord = async (record: SavedDocRecord): Promise<void> => {
-  // Always update local storage first so user never loses data
+  // Update local storage first so user never loses data
   try {
     const existingRaw = localStorage.getItem(LOCAL_STORAGE_DOCS_KEY);
     const existing: SavedDocRecord[] = existingRaw ? JSON.parse(existingRaw) : [];

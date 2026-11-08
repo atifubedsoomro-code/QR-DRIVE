@@ -23,6 +23,7 @@ import { EmailShareModal } from './components/EmailShareModal';
 import { HistoryDashboard } from './components/HistoryDashboard';
 import { BatchProcessingPanel } from './components/BatchProcessingPanel';
 import { TypewriterWelcome } from './components/TypewriterWelcome';
+import { TypewriterButton } from './components/TypewriterButton';
 import { AuthGateModal } from './components/AuthGateModal';
 import { COVER_THEMES } from './constants/themes';
 import {
@@ -53,10 +54,9 @@ import {
   Layout,
   UploadCloud,
   FileCheck2,
-  Eye,
   Loader2,
   Layers,
-  FileText,
+  ExternalLink,
   AlertCircle,
 } from 'lucide-react';
 
@@ -74,8 +74,15 @@ export default function App() {
   // Step 5: View & Download New Version
   const [currentStep, setCurrentStep] = useState<1 | 2 | 3 | 4 | 5>(1);
 
-  // Full-screen typewriter welcome state
-  const [showTypewriterWelcome, setShowTypewriterWelcome] = useState(false);
+  // Full-screen typewriter animation state: supports 'login', 'logout', and 'upload-success'
+  const [typewriterConfig, setTypewriterConfig] = useState<{
+    isOpen: boolean;
+    mode: 'login' | 'logout' | 'upload-success';
+    targetUrl?: string;
+  }>({
+    isOpen: false,
+    mode: 'login',
+  });
 
   // Mandatory Auth popup state
   const [isAuthGateOpen, setIsAuthGateOpen] = useState(false);
@@ -88,7 +95,7 @@ export default function App() {
 
   const initialTheme = COVER_THEMES[0];
 
-  // Pristine Cover Data: NO fake/raw mock strings, all optional fields are empty by default!
+  // Pristine Cover Data: NO fake/raw mock strings, all optional fields are empty by default
   const [coverData, setCoverData] = useState<CoverData>({
     title: '', // Empty by default; populated automatically from uploaded document
     subtitle: '', // Optional
@@ -145,9 +152,6 @@ export default function App() {
   // History state
   const [savedDocs, setSavedDocs] = useState<SavedDocRecord[]>([]);
 
-  // Mobile preview toggle
-  const [mobilePreviewOpen, setMobilePreviewOpen] = useState(false);
-
   // Initialize auth
   useEffect(() => {
     const unsubscribe = initAuth(
@@ -201,7 +205,6 @@ export default function App() {
 
   // Generate QR code whenever the Drive Link or QR styling changes
   useEffect(() => {
-    // Verified public Drive link or base Drive URL
     const targetUrl =
       uploadResult?.webViewLink ||
       'https://drive.google.com';
@@ -223,7 +226,7 @@ export default function App() {
     coverData.logoUrl,
   ]);
 
-  // Google Login Handler
+  // Google Login Handler: Triggers Login Typewriter Animation
   const handleLogin = async () => {
     setIsLoggingIn(true);
     try {
@@ -241,7 +244,10 @@ export default function App() {
         }
 
         // Trigger Full Screen Animated Typewriter Welcome
-        setShowTypewriterWelcome(true);
+        setTypewriterConfig({
+          isOpen: true,
+          mode: 'login',
+        });
       }
     } catch (err: any) {
       console.error('Login error:', err);
@@ -251,13 +257,18 @@ export default function App() {
     }
   };
 
+  // Logout Handler: Triggers Logout Typewriter Animation
   const handleLogout = async () => {
     await logout();
     setUser(null);
     setToken(null);
+    setTypewriterConfig({
+      isOpen: true,
+      mode: 'logout',
+    });
   };
 
-  // Upload to Drive & Generate Real Public Viewer Link
+  // Upload to Drive & Trigger Upload Success Animation + Public URL Redirection
   const handleUploadToDrive = async () => {
     if (!currentDoc) {
       alert('Please upload a document first in Step 1.');
@@ -301,10 +312,14 @@ export default function App() {
       await saveDocumentRecord(record);
       refreshDocuments();
 
-      // Automatically transition to Step 5: Getting same doc with cover and QR!
-      setTimeout(() => {
-        setCurrentStep(5);
-      }, 700);
+      // Trigger Typewriter Animation on Upload Success + Auto Redirect to public file URL
+      setTypewriterConfig({
+        isOpen: true,
+        mode: 'upload-success',
+        targetUrl: result.webViewLink,
+      });
+
+      setCurrentStep(5);
     } catch (err: any) {
       console.error('Drive upload failed:', err);
       alert(err.message || 'Failed to upload to Google Drive.');
@@ -341,6 +356,13 @@ export default function App() {
       refreshDocuments();
     }
 
+    // Trigger upload success animation with manual link redirect
+    setTypewriterConfig({
+      isOpen: true,
+      mode: 'upload-success',
+      targetUrl: link,
+    });
+
     setCurrentStep(5);
   };
 
@@ -352,7 +374,6 @@ export default function App() {
     setCoverData((prev) => ({
       ...prev,
       title: doc.extractedTitle || doc.name,
-      // Leave optional fields empty instead of injecting fake corporate data!
       subtitle: '',
       organization: prev.organization || '',
       summary: '',
@@ -470,9 +491,13 @@ export default function App() {
 
   return (
     <div className="min-h-screen bg-[#09090b] text-white flex flex-col font-sans antialiased selection:bg-yellow-400 selection:text-black">
-      {/* FULL SCREEN ANIMATED TYPEWRITER WELCOME (TRIGGERED ON GOOGLE SIGN IN) */}
-      {showTypewriterWelcome && (
-        <TypewriterWelcome onComplete={() => setShowTypewriterWelcome(false)} />
+      {/* ANIMATED TYPEWRITER OVERLAY (LOGIN, LOGOUT & UPLOAD SUCCESS + REDIRECT) */}
+      {typewriterConfig.isOpen && (
+        <TypewriterWelcome
+          mode={typewriterConfig.mode}
+          targetUrl={typewriterConfig.targetUrl}
+          onComplete={() => setTypewriterConfig((prev) => ({ ...prev, isOpen: false }))}
+        />
       )}
 
       {/* MANDATORY GOOGLE SIGN IN MODAL GATE */}
@@ -614,14 +639,14 @@ export default function App() {
                             </p>
                           </div>
                         </div>
-                        <button
-                          type="button"
+
+                        {/* TYPEWRITER HOVER BUTTON */}
+                        <TypewriterButton
                           onClick={() => setCurrentStep(2)}
-                          className="inline-flex items-center gap-2 px-5 py-2.5 bg-yellow-400 hover:bg-yellow-300 text-black font-extrabold text-xs rounded-xl shadow-[0_0_20px_rgba(250,204,21,0.3)] transition-all cursor-pointer"
-                        >
-                          <span>Step 2: Choose Theme</span>
-                          <ArrowRight className="w-4 h-4 stroke-[3]" />
-                        </button>
+                          variant="primary"
+                          icon={<ArrowRight className="w-4 h-4 stroke-[2.5]" />}
+                          text="Step 2: Choose Theme"
+                        />
                       </div>
                     )}
                   </div>
@@ -636,23 +661,19 @@ export default function App() {
                     />
 
                     <div className="flex items-center justify-between p-4 bg-[#121215] rounded-2xl border border-yellow-500/25">
-                      <button
-                        type="button"
+                      <TypewriterButton
                         onClick={() => setCurrentStep(1)}
-                        className="inline-flex items-center gap-2 px-4 py-2 bg-zinc-900 hover:bg-zinc-800 text-zinc-300 text-xs font-bold rounded-xl border border-zinc-800 cursor-pointer"
-                      >
-                        <ArrowLeft className="w-4 h-4" />
-                        <span>Back: Step 1</span>
-                      </button>
+                        variant="dark"
+                        icon={<ArrowLeft className="w-4 h-4" />}
+                        text="Back: Step 1"
+                      />
 
-                      <button
-                        type="button"
+                      <TypewriterButton
                         onClick={() => setCurrentStep(3)}
-                        className="inline-flex items-center gap-2 px-5 py-2.5 bg-yellow-400 hover:bg-yellow-300 text-black font-extrabold text-xs rounded-xl shadow-[0_0_20px_rgba(250,204,21,0.3)] transition-all cursor-pointer"
-                      >
-                        <span>Step 3: Colour Carousel</span>
-                        <ArrowRight className="w-4 h-4 stroke-[3]" />
-                      </button>
+                        variant="primary"
+                        icon={<ArrowRight className="w-4 h-4 stroke-[2.5]" />}
+                        text="Step 3: Colours"
+                      />
                     </div>
                   </div>
                 )}
@@ -666,23 +687,19 @@ export default function App() {
                     />
 
                     <div className="flex items-center justify-between p-4 bg-[#121215] rounded-2xl border border-yellow-500/25">
-                      <button
-                        type="button"
+                      <TypewriterButton
                         onClick={() => setCurrentStep(2)}
-                        className="inline-flex items-center gap-2 px-4 py-2 bg-zinc-900 hover:bg-zinc-800 text-zinc-300 text-xs font-bold rounded-xl border border-zinc-800 cursor-pointer"
-                      >
-                        <ArrowLeft className="w-4 h-4" />
-                        <span>Back: Step 2</span>
-                      </button>
+                        variant="dark"
+                        icon={<ArrowLeft className="w-4 h-4" />}
+                        text="Back: Step 2"
+                      />
 
-                      <button
-                        type="button"
+                      <TypewriterButton
                         onClick={() => setCurrentStep(4)}
-                        className="inline-flex items-center gap-2 px-5 py-2.5 bg-yellow-400 hover:bg-yellow-300 text-black font-extrabold text-xs rounded-xl shadow-[0_0_20px_rgba(250,204,21,0.3)] transition-all cursor-pointer"
-                      >
-                        <span>Step 4: Upload to Drive</span>
-                        <ArrowRight className="w-4 h-4 stroke-[3]" />
-                      </button>
+                        variant="primary"
+                        icon={<ArrowRight className="w-4 h-4 stroke-[2.5]" />}
+                        text="Step 4: Drive QR"
+                      />
                     </div>
                   </div>
                 )}
@@ -705,34 +722,28 @@ export default function App() {
                     />
 
                     <div className="flex items-center justify-between p-4 bg-[#121215] rounded-2xl border border-yellow-500/25">
-                      <button
-                        type="button"
+                      <TypewriterButton
                         onClick={() => setCurrentStep(3)}
-                        className="inline-flex items-center gap-2 px-4 py-2 bg-zinc-900 hover:bg-zinc-800 text-zinc-300 text-xs font-bold rounded-xl border border-zinc-800 cursor-pointer"
-                      >
-                        <ArrowLeft className="w-4 h-4" />
-                        <span>Back: Step 3</span>
-                      </button>
+                        variant="dark"
+                        icon={<ArrowLeft className="w-4 h-4" />}
+                        text="Back: Step 3"
+                      />
 
                       {uploadResult ? (
-                        <button
-                          type="button"
+                        <TypewriterButton
                           onClick={() => setCurrentStep(5)}
-                          className="inline-flex items-center gap-2 px-5 py-2.5 bg-yellow-400 hover:bg-yellow-300 text-black font-extrabold text-xs rounded-xl shadow-[0_0_20px_rgba(250,204,21,0.3)] transition-all cursor-pointer"
-                        >
-                          <span>Step 5: View & Download</span>
-                          <ArrowRight className="w-4 h-4 stroke-[3]" />
-                        </button>
+                          variant="primary"
+                          icon={<ArrowRight className="w-4 h-4 stroke-[2.5]" />}
+                          text="Step 5: Download"
+                        />
                       ) : (
-                        <button
-                          type="button"
+                        <TypewriterButton
                           onClick={handleUploadToDrive}
                           disabled={isUploading || !currentDoc}
-                          className="inline-flex items-center gap-2 px-5 py-2.5 bg-yellow-400 hover:bg-yellow-300 disabled:opacity-50 text-black font-extrabold text-xs rounded-xl shadow-[0_0_20px_rgba(250,204,21,0.3)] transition-all cursor-pointer"
-                        >
-                          <HardDrive className="w-4 h-4" />
-                          <span>{isUploading ? 'Uploading to Drive...' : 'Upload Now & Create Public QR'}</span>
-                        </button>
+                          variant="primary"
+                          icon={<HardDrive className="w-4 h-4" />}
+                          text={isUploading ? 'Uploading to Drive...' : 'Upload Now & Create Public QR'}
+                        />
                       )}
                     </div>
                   </div>
@@ -770,39 +781,28 @@ export default function App() {
                         </div>
                       )}
 
-                      {/* 1-Click Primary Download Button */}
-                      <button
-                        type="button"
+                      {/* 1-Click Primary Download Button with Typewriter Hover Animation */}
+                      <TypewriterButton
                         onClick={handleDirectDownloadMergedPdf}
                         disabled={isDownloading}
-                        className="w-full py-3.5 px-4 bg-yellow-400 hover:bg-yellow-300 text-black font-extrabold text-sm rounded-xl shadow-[0_0_25px_rgba(250,204,21,0.35)] transition-all flex items-center justify-center gap-2 cursor-pointer disabled:opacity-50"
-                      >
-                        {isDownloading ? (
-                          <>
-                            <Loader2 className="w-5 h-5 animate-spin" />
-                            <span>Merging Cover & Generating PDF...</span>
-                          </>
-                        ) : (
-                          <>
-                            <Download className="w-5 h-5 stroke-[2.5]" />
-                            <span>Download Merged Document (All {totalPages} Pages PDF)</span>
-                          </>
-                        )}
-                      </button>
+                        loading={isDownloading}
+                        variant="primary"
+                        size="lg"
+                        className="w-full"
+                        icon={<Download className="w-5 h-5 stroke-[2.5]" />}
+                        text={`Download Merged Document (All ${totalPages} Pages PDF)`}
+                      />
 
-                      {/* Secondary Action Grid: Print, Share via Email, Standalone Cover */}
+                      {/* Secondary Action Grid with Typewriter Hover Animation */}
                       <div className="grid grid-cols-1 sm:grid-cols-3 gap-2.5 pt-1">
-                        <button
-                          type="button"
+                        <TypewriterButton
                           onClick={handlePrint}
-                          className="py-2.5 px-3 bg-zinc-900 hover:bg-zinc-800 text-zinc-200 border border-zinc-800 text-xs font-bold rounded-xl flex items-center justify-center gap-2 cursor-pointer transition-colors"
-                        >
-                          <Printer className="w-4 h-4 text-yellow-400" />
-                          <span>Print All Pages</span>
-                        </button>
+                          variant="dark"
+                          icon={<Printer className="w-4 h-4 text-yellow-400" />}
+                          text="Print All Pages"
+                        />
 
-                        <button
-                          type="button"
+                        <TypewriterButton
                           onClick={() => {
                             setEmailShareTarget({
                               title: coverData.title || currentDoc?.name || 'Document',
@@ -811,42 +811,35 @@ export default function App() {
                             });
                             setIsEmailModalOpen(true);
                           }}
-                          className="py-2.5 px-3 bg-zinc-900 hover:bg-zinc-800 text-zinc-200 border border-zinc-800 text-xs font-bold rounded-xl flex items-center justify-center gap-2 cursor-pointer transition-colors"
-                        >
-                          <Mail className="w-4 h-4 text-yellow-400" />
-                          <span>Share via Email</span>
-                        </button>
+                          variant="dark"
+                          icon={<Mail className="w-4 h-4 text-yellow-400" />}
+                          text="Share via Email"
+                        />
 
-                        <button
-                          type="button"
+                        <TypewriterButton
                           onClick={() => setIsExportModalOpen(true)}
-                          className="py-2.5 px-3 bg-zinc-900 hover:bg-zinc-800 text-zinc-200 border border-zinc-800 text-xs font-bold rounded-xl flex items-center justify-center gap-2 cursor-pointer transition-colors"
-                        >
-                          <Layers className="w-4 h-4 text-yellow-400" />
-                          <span>More Export Options</span>
-                        </button>
+                          variant="dark"
+                          icon={<Layers className="w-4 h-4 text-yellow-400" />}
+                          text="More Export Options"
+                        />
                       </div>
                     </div>
 
                     {/* Step 5 Navigation Footer */}
                     <div className="flex items-center justify-between p-4 bg-[#121215] rounded-2xl border border-zinc-800">
-                      <button
-                        type="button"
+                      <TypewriterButton
                         onClick={() => setCurrentStep(3)}
-                        className="inline-flex items-center gap-2 px-4 py-2 bg-zinc-900 hover:bg-zinc-800 text-zinc-300 text-xs font-bold rounded-xl border border-zinc-800 cursor-pointer"
-                      >
-                        <ArrowLeft className="w-4 h-4" />
-                        <span>Edit Colors & Theme</span>
-                      </button>
+                        variant="dark"
+                        icon={<ArrowLeft className="w-4 h-4" />}
+                        text="Edit Colors & Theme"
+                      />
 
-                      <button
-                        type="button"
+                      <TypewriterButton
                         onClick={handleStartOver}
-                        className="inline-flex items-center gap-2 px-4 py-2 bg-zinc-800 hover:bg-zinc-700 text-white text-xs font-bold rounded-xl cursor-pointer"
-                      >
-                        <RotateCcw className="w-3.5 h-3.5" />
-                        <span>Upload Another Document</span>
-                      </button>
+                        variant="secondary"
+                        icon={<RotateCcw className="w-3.5 h-3.5" />}
+                        text="Upload Another Document"
+                      />
                     </div>
                   </div>
                 )}

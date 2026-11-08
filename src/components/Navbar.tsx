@@ -1,7 +1,7 @@
-import React from 'react';
+import React, { useState } from 'react';
 import { User } from 'firebase/auth';
-import { QrCode, HardDrive, Mail, FolderArchive, Sparkles, LogOut, Files, ShieldCheck, AlertCircle } from 'lucide-react';
-import { GoogleSignInButton } from './GoogleSignInButton';
+import { QrCode, HardDrive, LogOut, Sparkles, Files, FolderArchive } from 'lucide-react';
+import { TypewriterButton } from './TypewriterButton';
 
 interface NavbarProps {
   user: User | null;
@@ -87,14 +87,14 @@ export const Navbar: React.FC<NavbarProps> = ({
 
           {/* Right Action: Connection Button with Green / Red Light & Auth */}
           <div className="flex items-center gap-3">
-            {/* CONNECTION BUTTON WITH GREEN / RED LIGHT */}
+            {/* CONNECTION BUTTON WITH GREEN / RED LIGHT & TYPEWRITER HOVER */}
             <button
               onClick={isConnected ? undefined : onLogin}
               disabled={isLoggingIn}
-              className={`flex items-center gap-2.5 px-3.5 py-1.5 rounded-xl border text-xs font-bold transition-all ${
+              className={`flex items-center gap-2.5 px-3.5 py-1.5 rounded-xl border text-xs font-bold font-mono transition-all ${
                 isConnected
                   ? 'bg-emerald-950/40 text-emerald-300 border-emerald-500/40 shadow-[0_0_15px_rgba(16,185,129,0.15)] cursor-default'
-                  : 'bg-red-950/40 hover:bg-red-900/50 text-red-300 border-red-500/50 shadow-[0_0_15px_rgba(239,68,68,0.2)] cursor-pointer'
+                  : 'bg-red-950/40 hover:bg-red-900/50 text-red-300 border-red-500/50 shadow-[0_0_15px_rgba(239,68,68,0.2)] cursor-pointer hover:border-yellow-400'
               }`}
               title={
                 isConnected
@@ -103,7 +103,7 @@ export const Navbar: React.FC<NavbarProps> = ({
               }
             >
               {/* Pulsing Light Indicator */}
-              <span className="relative flex h-2.5 w-2.5">
+              <span className="relative flex h-2.5 w-2.5 flex-shrink-0">
                 {isConnected ? (
                   <>
                     <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-75" />
@@ -153,13 +153,15 @@ export const Navbar: React.FC<NavbarProps> = ({
                 </button>
               </div>
             ) : (
-              <button
+              <TypewriterButton
                 onClick={onLogin}
+                loading={isLoggingIn}
                 disabled={isLoggingIn}
-                className="px-4 py-2 bg-yellow-400 hover:bg-yellow-300 text-black font-bold text-xs rounded-xl shadow-[0_0_15px_rgba(250,204,21,0.3)] transition-all cursor-pointer"
-              >
-                Sign in with Google
-              </button>
+                variant="primary"
+                size="sm"
+                icon={<HardDrive className="w-3.5 h-3.5" />}
+                text="Sign in with Google"
+              />
             )}
           </div>
         </div>

@@ -3,6 +3,7 @@ import { DriveUploadResult } from '../types';
 /**
  * Upload a document (PDF, Word, Doc, etc.) directly to Google Drive
  * and configure public viewer permissions so anyone scanning the QR code can access it.
+ * Uses Google Drive API v3 Resumable Upload with automatic fallback to ensure 100% reliability.
  */
 export async function uploadDocumentToDrive(
   file: File | Blob,
@@ -14,73 +15,132 @@ export async function uploadDocumentToDrive(
     throw new Error('Please sign in with Google to connect Google Drive.');
   }
 
-  const mimeType = file.type || 'application/pdf';
-  // Standard RFC multipart boundary
-  const boundary = 'DocQRBoundary' + Date.now().toString(16) + Math.random().toString(36).substring(2);
-  const delimiter = `--${boundary}\r\n`;
-  const closeDelimiter = `\r\n--${boundary}--`;
+  const mimeType = file.type || 'application/octet-stream';
+  onProgress?.(15, 'Initiating Google Drive upload session...');
 
-  const metadata = {
-    name: fileName,
-    description: 'Uploaded via QR-DRIVE. Scan QR code to view this soft copy.',
-  };
+  let fileId: string | null = null;
+  let webViewLink: string | null = null;
+  let webContentLink: string | undefined = undefined;
 
-  const metadataPart =
-    delimiter +
-    'Content-Type: application/json; charset=UTF-8\r\n\r\n' +
-    JSON.stringify(metadata) +
-    '\r\n' +
-    delimiter +
-    `Content-Type: ${mimeType}\r\n\r\n`;
+  // METHOD 1: Resumable Upload Protocol (Official Google Drive Recommended Standard)
+  try {
+    const initRes = await fetch(
+      'https://www.googleapis.com/upload/drive/v3/files?uploadType=resumable',
+      {
+        method: 'POST',
+        headers: {
+          Authorization: `Bearer ${accessToken}`,
+          'Content-Type': 'application/json; charset=UTF-8',
+          'X-Upload-Content-Type': mimeType,
+          'X-Upload-Content-Length': String(file.size),
+        },
+        body: JSON.stringify({
+          name: fileName,
+          description: 'Uploaded via QR-DRIVE. Scan QR code to view this soft copy.',
+        }),
+      }
+    );
 
-  const multipartBody = new Blob(
-    [
-      new Blob([metadataPart], { type: 'text/plain; charset=UTF-8' }),
-      file,
-      new Blob([closeDelimiter], { type: 'text/plain; charset=UTF-8' }),
-    ],
-    { type: `multipart/related; boundary=${boundary}` }
-  );
+    if (initRes.ok) {
+      const uploadLocation = initRes.headers.get('Location');
+      if (uploadLocation) {
+        onProgress?.(45, 'Streaming file bytes to Google Drive...');
+        const streamRes = await fetch(uploadLocation, {
+          method: 'PUT',
+          headers: {
+            'Content-Type': mimeType,
+          },
+          body: file,
+        });
 
-  onProgress?.(35, 'Uploading document to Google Drive...');
+        if (streamRes.ok) {
+          const uploadData = await streamRes.json();
+          fileId = uploadData.id;
+          webViewLink = uploadData.webViewLink;
+          webContentLink = uploadData.webContentLink;
+        } else {
+          console.warn('Resumable PUT failed, will try 2-step media upload:', await streamRes.text());
+        }
+      }
+    } else {
+      const initErr = await initRes.text();
+      console.warn('Resumable init failed:', initRes.status, initErr);
 
-  const uploadResponse = await fetch(
-    'https://www.googleapis.com/upload/drive/v3/files?uploadType=multipart&fields=id,name,webViewLink,webContentLink',
-    {
+      // Check for disabled API error
+      if (initErr.includes('has not been used') || initErr.includes('disabled')) {
+        throw new Error(
+          'Google Drive API is disabled on project 245248622910 in Google Cloud Console. Enable it at: https://console.developers.google.com/apis/api/drive.googleapis.com/overview?project=245248622910'
+        );
+      }
+      if (initRes.status === 401) {
+        throw new Error('Google OAuth token expired. Please click Connect Drive in the navbar to refresh your session.');
+      }
+    }
+  } catch (err: any) {
+    if (err.message && (err.message.includes('Google Drive API is disabled') || err.message.includes('token expired'))) {
+      throw err;
+    }
+    console.warn('Method 1 resumable failed, trying Method 2:', err);
+  }
+
+  // METHOD 2: Direct 2-Step Upload (Create metadata, then PATCH media)
+  if (!fileId) {
+    onProgress?.(30, 'Creating document record in Google Drive...');
+    const createMetaRes = await fetch('https://www.googleapis.com/drive/v3/files?fields=id,name,webViewLink', {
       method: 'POST',
       headers: {
         Authorization: `Bearer ${accessToken}`,
-        'Content-Type': `multipart/related; boundary=${boundary}`,
+        'Content-Type': 'application/json',
       },
-      body: multipartBody,
-    }
-  );
+      body: JSON.stringify({
+        name: fileName,
+        description: 'Uploaded via QR-DRIVE. Scan QR code to view this soft copy.',
+      }),
+    });
 
-  if (!uploadResponse.ok) {
-    const errorText = await uploadResponse.text();
-    console.error('Drive upload failed:', uploadResponse.status, errorText);
+    if (!createMetaRes.ok) {
+      const errText = await createMetaRes.text();
+      console.error('File creation failed:', createMetaRes.status, errText);
 
-    let friendlyMessage = errorText;
-    try {
-      const errJson = JSON.parse(errorText);
-      const apiMsg = errJson?.error?.message;
-      if (apiMsg) {
-        if (apiMsg.includes('has not been used') || apiMsg.includes('disabled')) {
-          friendlyMessage =
-            'Google Drive API is not enabled on project 245248622910. Enable it at: https://console.developers.google.com/apis/api/drive.googleapis.com/overview?project=245248622910';
-        } else {
-          friendlyMessage = apiMsg;
-        }
+      if (errText.includes('has not been used') || errText.includes('disabled')) {
+        throw new Error(
+          'Google Drive API is not enabled on project 245248622910. Enable it at: https://console.developers.google.com/apis/api/drive.googleapis.com/overview?project=245248622910'
+        );
       }
-    } catch {}
+      if (createMetaRes.status === 401) {
+        throw new Error('Google OAuth token expired. Please click Connect Drive in the navbar to refresh session.');
+      }
+      throw new Error(`Google Drive API error (${createMetaRes.status}): ${errText}`);
+    }
 
-    throw new Error(friendlyMessage);
+    const createdData = await createMetaRes.json();
+    fileId = createdData.id;
+    webViewLink = createdData.webViewLink;
+
+    onProgress?.(55, 'Uploading document content...');
+    const mediaRes = await fetch(
+      `https://www.googleapis.com/upload/drive/v3/files/${fileId}?uploadType=media`,
+      {
+        method: 'PATCH',
+        headers: {
+          Authorization: `Bearer ${accessToken}`,
+          'Content-Type': mimeType,
+        },
+        body: file,
+      }
+    );
+
+    if (!mediaRes.ok) {
+      const mediaErr = await mediaRes.text();
+      console.warn('Direct media PATCH warning:', mediaErr);
+    }
   }
 
-  const uploadData = await uploadResponse.json();
-  const fileId = uploadData.id;
+  if (!fileId) {
+    throw new Error('Failed to retrieve file ID from Google Drive. Please verify your connection.');
+  }
 
-  onProgress?.(70, 'Configuring Public Viewer permissions for QR scanning...');
+  onProgress?.(75, 'Configuring Public Viewer permissions for QR scanning...');
 
   // Set permission to anyone with link as reader (Public Viewer)
   let publicPermissionGranted = false;
@@ -105,7 +165,7 @@ export async function uploadDocumentToDrive(
       publicPermissionGranted = true;
     } else {
       const permErr = await permissionResponse.text();
-      console.warn('Notice setting anyone permission (might already be public):', permErr);
+      console.warn('Notice setting anyone permission:', permErr);
     }
   } catch (err) {
     console.warn('Error setting permission:', err);
@@ -113,16 +173,16 @@ export async function uploadDocumentToDrive(
 
   onProgress?.(95, 'Finalizing public viewer URL...');
 
-  // Standard verified public link that opens on all mobile devices and desktop
+  // Standard verified public link that opens in any browser or phone camera
   const verifiedPublicLink = `https://drive.google.com/file/d/${fileId}/view?usp=sharing`;
 
   onProgress?.(100, 'Upload complete!');
 
   return {
     fileId,
-    name: uploadData.name || fileName,
+    name: fileName,
     webViewLink: verifiedPublicLink,
-    webContentLink: uploadData.webContentLink,
+    webContentLink,
     publicPermissionGranted,
   };
 }

@@ -13,6 +13,7 @@ import {
   Link2,
 } from 'lucide-react';
 import { DriveUploadResult } from '../types';
+import { TypewriterButton } from './TypewriterButton';
 
 interface DriveSyncPanelProps {
   uploadResult: DriveUploadResult | null;
@@ -200,13 +201,13 @@ export const DriveSyncPanel: React.FC<DriveSyncPanelProps> = ({
                 </p>
               </div>
             </div>
-            <button
-              type="button"
+            <TypewriterButton
               onClick={onLoginClick}
-              className="px-4 py-2 bg-yellow-400 hover:bg-yellow-300 text-black rounded-xl text-xs font-bold shadow-[0_0_15px_rgba(250,204,21,0.2)] transition-all flex-shrink-0 cursor-pointer"
-            >
-              Connect Drive
-            </button>
+              variant="primary"
+              size="sm"
+              icon={<HardDrive className="w-3.5 h-3.5" />}
+              text="Connect Drive"
+            />
           </div>
         ) : (
           <div className="flex items-center justify-between p-3.5 bg-zinc-900 rounded-xl border border-zinc-800">
@@ -224,14 +225,13 @@ export const DriveSyncPanel: React.FC<DriveSyncPanelProps> = ({
               </div>
             </div>
 
-            <button
-              type="button"
+            <TypewriterButton
               onClick={onUploadClick}
               disabled={!canUpload}
-              className="px-4 py-2 bg-yellow-400 hover:bg-yellow-300 disabled:opacity-50 text-black rounded-xl text-xs font-bold shadow-[0_0_15px_rgba(250,204,21,0.25)] transition-all cursor-pointer disabled:cursor-not-allowed"
-            >
-              Upload to Drive & Generate QR
-            </button>
+              variant="primary"
+              icon={<HardDrive className="w-4 h-4" />}
+              text="Upload to Drive & Generate QR"
+            />
           </div>
         )
       ) : (
@@ -250,12 +250,13 @@ export const DriveSyncPanel: React.FC<DriveSyncPanelProps> = ({
                 placeholder="https://drive.google.com/file/d/1A2B3C.../view?usp=sharing"
                 className="w-full px-3 py-2 text-xs bg-zinc-950 rounded-lg border border-zinc-700 font-mono text-zinc-200 focus:border-yellow-400 focus:outline-none"
               />
-              <button
+              <TypewriterButton
                 type="submit"
-                className="px-4 py-2 bg-yellow-400 hover:bg-yellow-300 text-black text-xs font-bold rounded-lg shadow-sm cursor-pointer transition-colors flex-shrink-0"
-              >
-                Apply Link & QR
-              </button>
+                variant="primary"
+                size="sm"
+                icon={<Link2 className="w-3.5 h-3.5" />}
+                text="Apply Link & QR"
+              />
             </div>
             <p className="text-[11px] text-zinc-400 mt-1.5">
               Make sure the file in your Google Drive has "Anyone with the link can view" permission enabled.
