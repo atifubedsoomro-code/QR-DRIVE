@@ -8,7 +8,7 @@ export interface CoverTheme {
   id: string;
   name: string;
   description: string;
-  category: 'Corporate' | 'Minimalist' | 'Creative' | 'Academic' | 'Modern' | 'Luxury' | 'Editorial';
+  category: 'Plain' | 'Corporate' | 'Minimalist' | 'Creative' | 'Academic' | 'Modern' | 'Luxury' | 'Editorial';
   primaryColor: string;
   secondaryColor: string;
   accentColor: string;
@@ -16,7 +16,22 @@ export interface CoverTheme {
   backgroundColor: string;
   defaultFont: FontStyle;
   defaultImage: string;
-  layoutStyle: 'banner-top' | 'split-vertical' | 'minimal-frame' | 'full-overlay' | 'geometric-grid' | 'bottom-accent' | 'card-centered' | 'bordered-formal';
+  layoutStyle:
+    | 'banner-top'
+    | 'split-vertical'
+    | 'minimal-frame'
+    | 'full-overlay'
+    | 'geometric-grid'
+    | 'bottom-accent'
+    | 'card-centered'
+    | 'bordered-formal'
+    // Picture-free layouts
+    | 'plain'
+    | 'plain-rule'
+    | 'plain-left-bar'
+    | 'plain-centered';
+  /** Dark background theme: light title and body text */
+  isDark?: boolean;
 }
 
 export interface CoverData {
@@ -70,6 +85,8 @@ export interface DriveUploadResult {
   webViewLink: string;
   webContentLink?: string;
   publicPermissionGranted: boolean;
+  /** Set when the file uploaded but "Anyone with the link" could not be applied */
+  permissionWarning?: string;
 }
 
 export interface BatchItem {

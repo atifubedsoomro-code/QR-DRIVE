@@ -8,13 +8,53 @@ interface ThemeSelectorProps {
   onSelectTheme: (theme: CoverTheme) => void;
 }
 
+/** Thumbnail for picture-free themes: a mini page drawn from the theme's own colours. */
+const PlainThumb: React.FC<{ theme: CoverTheme }> = ({ theme }) => {
+  const ink = theme.isDark ? '#ffffff' : theme.primaryColor;
+  const centered = theme.layoutStyle === 'plain-centered';
+  const leftBar = theme.layoutStyle === 'plain-left-bar';
+
+  return (
+    <div className="absolute inset-0" style={{ backgroundColor: theme.backgroundColor }}>
+      {theme.layoutStyle === 'plain-rule' && (
+        <>
+          <div className="absolute top-2 inset-x-3 h-0.5" style={{ backgroundColor: theme.primaryColor }} />
+          <div className="absolute bottom-2 inset-x-3 h-px" style={{ backgroundColor: theme.accentColor }} />
+        </>
+      )}
+      {leftBar && <div className="absolute left-0 inset-y-0 w-2" style={{ backgroundColor: theme.primaryColor }} />}
+
+      <div
+        className={`absolute top-7 flex flex-col gap-1.5 ${
+          centered ? 'inset-x-4 items-center' : leftBar ? 'left-5 right-4 items-start' : 'inset-x-4 items-start'
+        }`}
+      >
+        <div className="h-1.5 w-3/4 rounded-sm" style={{ backgroundColor: ink }} />
+        <div className="h-1 w-1/2 rounded-sm" style={{ backgroundColor: theme.accentColor }} />
+        <div className="h-0.5 w-6 rounded-full mt-0.5" style={{ backgroundColor: theme.accentColor }} />
+      </div>
+
+      <div
+        className="absolute bottom-3.5 right-3 w-5 h-5 rounded-sm border"
+        style={{ borderColor: ink, opacity: 0.5 }}
+      />
+      <span
+        className="absolute bottom-3.5 left-4 text-[8px] font-bold uppercase tracking-wider"
+        style={{ color: ink, opacity: 0.6 }}
+      >
+        No image
+      </span>
+    </div>
+  );
+};
+
 export const ThemeSelector: React.FC<ThemeSelectorProps> = ({
   selectedThemeId,
   onSelectTheme,
 }) => {
   const [filterCategory, setFilterCategory] = useState<string>('All');
 
-  const categories = ['All', 'Corporate', 'Minimalist', 'Modern', 'Creative', 'Academic', 'Luxury', 'Editorial'];
+  const categories = ['All', 'Plain', 'Corporate', 'Minimalist', 'Modern', 'Creative', 'Academic', 'Luxury', 'Editorial'];
 
   const filteredThemes =
     filterCategory === 'All'
@@ -31,7 +71,7 @@ export const ThemeSelector: React.FC<ThemeSelectorProps> = ({
             </span>
             Cover Theme
             <span className="text-xs font-normal text-zinc-400">
-              (12 Custom Styles)
+              ({COVER_THEMES.length} Styles)
             </span>
           </h3>
           <p className="text-xs text-zinc-400">
@@ -83,25 +123,29 @@ export const ThemeSelector: React.FC<ThemeSelectorProps> = ({
                 className="w-full h-24 rounded-lg overflow-hidden relative mb-2.5 border border-zinc-800"
                 style={{ backgroundColor: theme.backgroundColor }}
               >
-                {theme.defaultImage && (
-                  <img
-                    src={theme.defaultImage}
-                    alt={theme.name}
-                    className="w-full h-full object-cover transition-transform duration-300 group-hover:scale-105 opacity-80"
-                  />
-                )}
-                {/* Decorative header overlay banner mimicking theme layout */}
-                <div className="absolute inset-0 bg-gradient-to-t from-black/90 via-black/30 to-transparent flex flex-col justify-end p-2 text-white">
-                  <div className="flex items-center gap-1.5">
-                    <span
-                      className="w-2.5 h-2.5 rounded-full shadow-xs"
-                      style={{ backgroundColor: theme.accentColor }}
+                {theme.defaultImage ? (
+                  <>
+                    <img
+                      src={theme.defaultImage}
+                      alt={theme.name}
+                      className="w-full h-full object-cover transition-transform duration-300 group-hover:scale-105 opacity-80"
                     />
-                    <span className="text-[10px] font-bold tracking-tight text-white/95 uppercase truncate">
-                      {theme.category}
-                    </span>
-                  </div>
-                </div>
+                    {/* Decorative header overlay banner mimicking theme layout */}
+                    <div className="absolute inset-0 bg-gradient-to-t from-black/90 via-black/30 to-transparent flex flex-col justify-end p-2 text-white">
+                      <div className="flex items-center gap-1.5">
+                        <span
+                          className="w-2.5 h-2.5 rounded-full shadow-xs"
+                          style={{ backgroundColor: theme.accentColor }}
+                        />
+                        <span className="text-[10px] font-bold tracking-tight text-white/95 uppercase truncate">
+                          {theme.category}
+                        </span>
+                      </div>
+                    </div>
+                  </>
+                ) : (
+                  <PlainThumb theme={theme} />
+                )}
               </div>
 
               {/* Theme details */}

@@ -24,6 +24,7 @@ interface DriveSyncPanelProps {
   needsAuth: boolean;
   onLoginClick: () => void;
   onManualLinkSubmit?: (link: string) => void;
+  uploadError?: { code: string; message: string } | null;
 }
 
 export const DriveSyncPanel: React.FC<DriveSyncPanelProps> = ({
@@ -35,6 +36,7 @@ export const DriveSyncPanel: React.FC<DriveSyncPanelProps> = ({
   needsAuth,
   onLoginClick,
   onManualLinkSubmit,
+  uploadError,
 }) => {
   const [copied, setCopied] = useState(false);
   const [mode, setMode] = useState<'auto' | 'manual'>('auto');
@@ -89,7 +91,7 @@ export const DriveSyncPanel: React.FC<DriveSyncPanelProps> = ({
       </div>
 
       {/* Mode Switcher Pills: Automatic 1-Click Upload vs Paste Share Link */}
-      <div className="flex items-center gap-2 border-b border-zinc-800 pb-3">
+      <div className="flex flex-wrap items-center gap-2 border-b border-zinc-800 pb-3">
         <button
           type="button"
           onClick={() => setMode('auto')}
@@ -117,6 +119,20 @@ export const DriveSyncPanel: React.FC<DriveSyncPanelProps> = ({
         </button>
       </div>
 
+      {/* Real reason the last upload failed (never swallowed or hidden in an alert) */}
+      {uploadError && mode === 'auto' && !isUploading && (
+        <div
+          role="alert"
+          className="p-3.5 bg-red-950/40 border border-red-500/40 rounded-xl flex items-start gap-2.5 text-xs text-red-200"
+        >
+          <AlertCircle className="w-4 h-4 flex-shrink-0 mt-0.5 text-red-400" />
+          <div className="space-y-1 min-w-0">
+            <p className="font-bold text-red-300">Upload to Google Drive failed</p>
+            <p className="break-words leading-relaxed">{uploadError.message}</p>
+          </div>
+        </div>
+      )}
+
       {/* AUTO MODE */}
       {mode === 'auto' ? (
         isUploading ? (
@@ -137,6 +153,18 @@ export const DriveSyncPanel: React.FC<DriveSyncPanelProps> = ({
           </div>
         ) : uploadResult ? (
           <div className="space-y-3">
+            {uploadResult.permissionWarning && (
+              <div
+                role="alert"
+                className="p-3.5 bg-amber-950/40 border border-amber-500/40 rounded-xl flex items-start gap-2.5 text-xs text-amber-200"
+              >
+                <AlertCircle className="w-4 h-4 flex-shrink-0 mt-0.5 text-amber-400" />
+                <div className="space-y-1 min-w-0">
+                  <p className="font-bold text-amber-300">File uploaded, but it is not public yet</p>
+                  <p className="break-words leading-relaxed">{uploadResult.permissionWarning}</p>
+                </div>
+              </div>
+            )}
             <div className="p-4 bg-zinc-900/90 rounded-xl border border-zinc-800 space-y-2">
               <div className="flex items-center justify-between">
                 <span className="text-[11px] uppercase font-bold tracking-wider text-yellow-400 flex items-center gap-1.5">
@@ -174,9 +202,15 @@ export const DriveSyncPanel: React.FC<DriveSyncPanelProps> = ({
             </div>
 
             <div className="flex items-center justify-between text-xs text-zinc-400 pt-1">
-              <span className="flex items-center gap-1.5 text-emerald-400 font-semibold">
+              <span
+                className={`flex items-center gap-1.5 font-semibold ${
+                  uploadResult.publicPermissionGranted ? 'text-emerald-400' : 'text-amber-400'
+                }`}
+              >
                 <ShieldCheck className="w-3.5 h-3.5" />
-                Permissions: Public Viewer (Anyone with link can view)
+                {uploadResult.publicPermissionGranted
+                  ? 'Permissions: Public Viewer (Anyone with link can view)'
+                  : 'Permissions: not public yet (see warning above)'}
               </span>
               <button
                 type="button"

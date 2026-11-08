@@ -76,9 +76,15 @@ export const initAuth = (
   });
 };
 
-export const googleSignIn = async (): Promise<{ user: User; accessToken: string } | null> => {
+export const googleSignIn = async (options?: {
+  forceConsent?: boolean;
+}): Promise<{ user: User; accessToken: string } | null> => {
   try {
     isSigningIn = true;
+    // After a missing-permission error, force Google to show the consent screen again
+    provider.setCustomParameters({
+      prompt: options?.forceConsent ? 'select_account consent' : 'select_account',
+    });
     const result = await signInWithPopup(auth, provider);
     const credential = GoogleAuthProvider.credentialFromResult(result);
     if (!credential?.accessToken) {

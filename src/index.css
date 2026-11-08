@@ -15,6 +15,14 @@
     display: none !important;
   }
 
+  /* The on-screen preview is scaled to fit; undo that so the cover prints at full page size */
+  .fit-wrapper,
+  .fit-wrapper > div {
+    width: 100% !important;
+    height: auto !important;
+    transform: none !important;
+  }
+
   #printable-cover-sheet {
     box-shadow: none !important;
     border: none !important;

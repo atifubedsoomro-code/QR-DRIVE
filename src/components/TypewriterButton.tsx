@@ -1,4 +1,5 @@
 import React, { useState, useRef, useEffect } from 'react';
+import { Loader2 } from 'lucide-react';
 import { typewriterAudio } from '../services/soundEffects';
 
 interface TypewriterButtonProps {
@@ -12,8 +13,23 @@ interface TypewriterButtonProps {
   className?: string;
   type?: 'button' | 'submit' | 'reset';
   title?: string;
+  /** Put the icon after the label (e.g. a "Next" arrow) */
+  iconPosition?: 'left' | 'right';
 }
 
+const supportsHover = () =>
+  typeof window !== 'undefined' && !!window.matchMedia && window.matchMedia('(hover: hover)').matches;
+
+const prefersReducedMotion = () =>
+  typeof window !== 'undefined' && !!window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+
+/**
+ * Icon-first button. At rest only the icon is visible; on hover (or keyboard focus) the
+ * button widens and the label types itself out like a typewriter.
+ *
+ * Labels are always visible when there is no icon, while loading, and on touch devices
+ * (no hover), so a button never turns into an unlabeled mystery icon.
+ */
 export const TypewriterButton: React.FC<TypewriterButtonProps> = ({
   icon,
   text,
@@ -25,50 +41,49 @@ export const TypewriterButton: React.FC<TypewriterButtonProps> = ({
   className = '',
   type = 'button',
   title,
+  iconPosition = 'left',
 }) => {
-  const [displayText, setDisplayText] = useState(text);
-  const [isHovered, setIsHovered] = useState(false);
-  const timerRef = useRef<any>(null);
+  const [active, setActive] = useState(false);
+  const [typed, setTyped] = useState('');
+  const [canHover] = useState(supportsHover);
+  const timerRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
-  // Keep displayText in sync if text prop updates
+  const alwaysShowText = !icon || !canHover || loading;
+  const showLabel = alwaysShowText || (active && !disabled);
+
   useEffect(() => {
-    if (!isHovered) {
-      setDisplayText(text);
-    }
-  }, [text, isHovered]);
-
-  const handleMouseEnter = () => {
-    if (disabled || loading) return;
-    setIsHovered(true);
-
-    // Play subtle hover mechanical tick
-    typewriterAudio.playHoverTick();
-
     if (timerRef.current) clearInterval(timerRef.current);
 
-    // Icon First Animation: clear text and type in letter-by-letter rapidly
-    setDisplayText('');
+    if (alwaysShowText) {
+      setTyped(text);
+      return;
+    }
+    if (!active || disabled) {
+      setTyped('');
+      return;
+    }
+    if (prefersReducedMotion()) {
+      setTyped(text);
+      return;
+    }
+
+    typewriterAudio.playHoverTick();
+    setTyped('');
     let idx = 0;
     timerRef.current = setInterval(() => {
       idx++;
-      if (idx <= text.length) {
-        setDisplayText(text.slice(0, idx));
-        if (idx % 2 === 0) {
-          typewriterAudio.playHoverTick();
-        }
-      } else {
+      setTyped(text.slice(0, idx));
+      if (idx % 3 === 0) typewriterAudio.playHoverTick();
+      if (idx >= text.length && timerRef.current) {
         clearInterval(timerRef.current);
       }
-    }, 25);
-  };
+    }, 28);
 
-  const handleMouseLeave = () => {
-    if (timerRef.current) clearInterval(timerRef.current);
-    setIsHovered(false);
-    setDisplayText(text);
-  };
+    return () => {
+      if (timerRef.current) clearInterval(timerRef.current);
+    };
+  }, [active, alwaysShowText, disabled, text]);
 
-  // Variant styling
   const getVariantStyles = () => {
     switch (variant) {
       case 'primary':
@@ -86,7 +101,6 @@ export const TypewriterButton: React.FC<TypewriterButtonProps> = ({
     }
   };
 
-  // Size styling
   const getSizeStyles = () => {
     switch (size) {
       case 'sm':
@@ -99,34 +113,59 @@ export const TypewriterButton: React.FC<TypewriterButtonProps> = ({
     }
   };
 
+  const iconNode = loading ? <Loader2 className="w-4 h-4 animate-spin" /> : icon;
+  const isTyping = !alwaysShowText && active && typed.length < text.length;
+
+  // Collapsed labels animate their width open so the button grows smoothly instead of jumping.
+  const labelStyle: React.CSSProperties = alwaysShowText
+    ? {}
+    : { maxWidth: showLabel ? `calc(${text.length + 2}ch + 0.5rem)` : 0 };
+
+  const label = (
+    <span
+      className={`inline-flex items-center font-bold tracking-tight ${
+        alwaysShowText ? '' : 'overflow-hidden whitespace-nowrap transition-[max-width] duration-300 ease-out'
+      }`}
+      style={labelStyle}
+      aria-hidden={!showLabel}
+    >
+      <span className={iconNode ? (iconPosition === 'right' ? 'pr-2' : 'pl-2') : ''}>
+        {typed}
+        {isTyping && <span className="inline-block w-1.5 h-3.5 align-middle bg-current ml-0.5 animate-pulse" />}
+      </span>
+    </span>
+  );
+
+  const iconEl = iconNode ? (
+    <span className="flex-shrink-0 inline-flex items-center justify-center transition-transform duration-300 group-hover:scale-110">
+      {iconNode}
+    </span>
+  ) : null;
+
   return (
     <button
       type={type}
       onClick={onClick}
       disabled={disabled || loading}
-      onMouseEnter={handleMouseEnter}
-      onMouseLeave={handleMouseLeave}
-      title={title}
-      className={`group relative inline-flex items-center justify-center gap-2 rounded-xl border font-mono transition-all duration-200 cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed select-none overflow-hidden ${getVariantStyles()} ${getSizeStyles()} ${className}`}
+      onMouseEnter={() => setActive(true)}
+      onMouseLeave={() => setActive(false)}
+      onFocus={() => setActive(true)}
+      onBlur={() => setActive(false)}
+      title={title ?? text}
+      aria-label={text}
+      className={`group relative inline-flex items-center justify-center rounded-xl border font-mono transition-all duration-200 cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed select-none ${getVariantStyles()} ${getSizeStyles()} ${className}`}
     >
-      {/* Icon First Animation: animated scale, bounce, and yellow glow */}
-      {icon && (
-        <span
-          className={`flex-shrink-0 transition-transform duration-300 ${
-            isHovered ? 'scale-120 rotate-6 text-current' : 'scale-100 group-hover:scale-110'
-          }`}
-        >
-          {icon}
-        </span>
+      {iconPosition === 'right' ? (
+        <>
+          {label}
+          {iconEl}
+        </>
+      ) : (
+        <>
+          {iconEl}
+          {label}
+        </>
       )}
-
-      {/* Typewriter Styled Text */}
-      <span className="font-bold tracking-tight inline-flex items-center">
-        <span>{displayText}</span>
-        {isHovered && (
-          <span className="inline-block w-1.5 h-3.5 bg-current ml-0.5 animate-pulse" />
-        )}
-      </span>
     </button>
   );
 };

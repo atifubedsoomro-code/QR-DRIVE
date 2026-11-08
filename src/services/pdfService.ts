@@ -97,7 +97,10 @@ export async function generateCoverPagePdf(
   // Custom Color overrides with theme fallbacks
   const primaryRgb = hexToPdfRgb(coverData.primaryColor || theme.primaryColor, '#000000');
   const accentRgb = hexToPdfRgb(coverData.accentColor || theme.accentColor, '#facc15');
-  const titleRgb = hexToPdfRgb(coverData.titleColor, coverData.primaryColor || theme.primaryColor);
+  const titleRgb = hexToPdfRgb(
+    coverData.titleColor,
+    theme.isDark ? '#ffffff' : coverData.primaryColor || theme.primaryColor
+  );
   const subtitleRgb = hexToPdfRgb(coverData.subtitleColor, coverData.accentColor || theme.accentColor);
   const bodyRgb = hexToPdfRgb(coverData.textColor, theme.textColor || '#1e293b');
   const bgRgb = hexToPdfRgb(theme.backgroundColor, '#ffffff');
@@ -138,6 +141,10 @@ export async function generateCoverPagePdf(
 
   // Layout Styles
   const layout = theme.layoutStyle;
+  const centered = layout === 'plain-centered';
+  const left = layout === 'plain-left-bar' ? 66 : 50;
+  const centerX = (text: string, font: { widthOfTextAtSize: (t: string, s: number) => number }, size: number) =>
+    centered ? (dims.width - font.widthOfTextAtSize(text, size)) / 2 : left;
 
   if (layout === 'banner-top' || layout === 'split-vertical') {
     const bannerHeight = dims.height * 0.35;
@@ -244,7 +251,30 @@ export async function generateCoverPagePdf(
       borderColor: accentRgb,
       borderWidth: 1,
     });
+  } else if (layout === 'plain-rule') {
+    page.drawLine({
+      start: { x: 50, y: dims.height - 38 },
+      end: { x: dims.width - 50, y: dims.height - 38 },
+      thickness: 2,
+      color: primaryRgb,
+    });
+    page.drawLine({
+      start: { x: 50, y: 22 },
+      end: { x: dims.width - 50, y: 22 },
+      thickness: 0.75,
+      color: accentRgb,
+    });
+  } else if (layout === 'plain-left-bar') {
+    page.drawRectangle({ x: 0, y: 0, width: 14, height: dims.height, color: primaryRgb });
+    page.drawLine({
+      start: { x: 24, y: 0 },
+      end: { x: 24, y: dims.height },
+      thickness: 0.75,
+      color: accentRgb,
+      opacity: 0.4,
+    });
   }
+  // 'plain' and 'plain-centered' draw no decoration at all
 
   // Draw Personal Logo if provided
   if (coverData.logoUrl && coverData.logoPosition !== 'qr-center') {
@@ -276,7 +306,7 @@ export async function generateCoverPagePdf(
   const topTextY = dims.height - 50;
   if (coverData.documentId) {
     page.drawText(sanitizePdfText(coverData.documentId.toUpperCase()), {
-      x: 50,
+      x: left,
       y: topTextY,
       size: 10,
       font: fontCourierBold,
@@ -290,13 +320,17 @@ export async function generateCoverPagePdf(
       y: topTextY,
       size: 10,
       font: fontHelveticaBold,
-      color: primaryRgb,
+      color: theme.isDark ? titleRgb : primaryRgb,
     });
   }
 
   // Content Area
   const contentStartY =
-    layout === 'banner-top' || layout === 'split-vertical' ? dims.height * 0.54 : dims.height * 0.72;
+    layout === 'banner-top' || layout === 'split-vertical'
+      ? dims.height * 0.54
+      : centered
+      ? dims.height * 0.6
+      : dims.height * 0.72;
 
   // Title wrapping logic
   const sanitizedTitle = sanitizePdfText(coverData.title) || 'Document';
@@ -319,7 +353,7 @@ export async function generateCoverPagePdf(
 
   for (const line of titleLines) {
     page.drawText(line, {
-      x: 50,
+      x: centerX(line, titleFont, titleFontSize),
       y: currentY,
       size: titleFontSize,
       font: titleFont,
@@ -332,7 +366,7 @@ export async function generateCoverPagePdf(
   if (coverData.subtitle) {
     currentY -= 6;
     page.drawText(sanitizePdfText(coverData.subtitle), {
-      x: 50,
+      x: centerX(sanitizePdfText(coverData.subtitle), bodyFont, 14),
       y: currentY,
       size: 14,
       font: bodyFont,
@@ -344,7 +378,7 @@ export async function generateCoverPagePdf(
   // Divider bar
   currentY -= 10;
   page.drawRectangle({
-    x: 50,
+    x: centered ? (dims.width - 60) / 2 : left,
     y: currentY,
     width: 60,
     height: 4,
@@ -355,14 +389,14 @@ export async function generateCoverPagePdf(
   // Metadata block (ONLY if provided)
   if (coverData.preparedBy) {
     page.drawText('PREPARED BY', {
-      x: 50,
+      x: left,
       y: currentY,
       size: 9,
       font: fontHelveticaBold,
       color: accentRgb,
     });
     page.drawText(sanitizePdfText(coverData.preparedBy), {
-      x: 50,
+      x: left,
       y: currentY - 14,
       size: 12,
       font: bodyFont,
@@ -396,7 +430,7 @@ export async function generateCoverPagePdf(
     const summaryLines = wrapText(sanitizePdfText(coverData.summary), 60).slice(0, 4);
     for (const sLine of summaryLines) {
       page.drawText(sLine, {
-        x: 50,
+        x: centerX(sLine, bodyFont, 10),
         y: currentY,
         size: 10,
         font: bodyFont,
@@ -451,11 +485,11 @@ export async function generateCoverPagePdf(
       let ctaY = qrY + qrSize - 4;
       for (const ctaLine of ctaWords) {
         page.drawText(ctaLine, {
-          x: 50,
+          x: left,
           y: ctaY,
           size: 9,
           font: bodyFont,
-          color: hexToPdfRgb('#374151'),
+          color: theme.isDark ? hexToPdfRgb('#cbd5e1') : hexToPdfRgb('#374151'),
         });
         ctaY -= 12;
       }
@@ -466,7 +500,7 @@ export async function generateCoverPagePdf(
 
   // Footer branding
   page.drawText('DOCUMENT CERTIFIED & CLOUD-LINKED VIA QR-DRIVE', {
-    x: 50,
+    x: left,
     y: 30,
     size: 7,
     font: fontHelvetica,
