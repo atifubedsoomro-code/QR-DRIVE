@@ -323,54 +323,56 @@ export const ColorCarousel: React.FC<ColorCarouselProps> = ({
         </div>
       </div>
 
-      {/* 3. DOCUMENT METADATA */}
+      {/* 3. DOCUMENT METADATA (OPTIONAL) */}
       <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
         <div>
           <label className="block text-xs font-semibold text-zinc-300 mb-1">
-            Document Title (On Cover)
+            Document Title <span className="text-[10px] text-zinc-500 font-normal">(Optional)</span>
           </label>
           <input
             type="text"
             value={coverData.title}
             onChange={(e) => updateField('title', e.target.value)}
+            placeholder="Auto-derived from file if empty"
             className="w-full px-3 py-1.5 text-xs rounded-lg bg-zinc-900 border border-zinc-700 focus:border-yellow-400 focus:outline-none text-white font-bold"
           />
         </div>
 
         <div>
           <label className="block text-xs font-semibold text-zinc-300 mb-1">
-            Subtitle / Tagline
+            Subtitle / Tagline <span className="text-[10px] text-zinc-500 font-normal">(Optional)</span>
           </label>
           <input
             type="text"
             value={coverData.subtitle}
             onChange={(e) => updateField('subtitle', e.target.value)}
+            placeholder="e.g. Technical Reference, Project Report"
             className="w-full px-3 py-1.5 text-xs rounded-lg bg-zinc-900 border border-zinc-700 focus:border-yellow-400 focus:outline-none text-zinc-200"
           />
         </div>
 
         <div>
           <label className="block text-xs font-semibold text-zinc-300 mb-1">
-            Author / Prepared By
+            Author / Prepared By <span className="text-[10px] text-zinc-500 font-normal">(Optional)</span>
           </label>
           <input
             type="text"
             value={coverData.preparedBy}
             onChange={(e) => updateField('preparedBy', e.target.value)}
-            placeholder="e.g. Atif Soomro"
+            placeholder="e.g. Your Name"
             className="w-full px-3 py-1.5 text-xs rounded-lg bg-zinc-900 border border-zinc-700 focus:border-yellow-400 focus:outline-none text-zinc-200"
           />
         </div>
 
         <div>
           <label className="block text-xs font-semibold text-zinc-300 mb-1">
-            Organization / Company
+            Organization / Company <span className="text-[10px] text-zinc-500 font-normal">(Optional)</span>
           </label>
           <input
             type="text"
             value={coverData.organization}
             onChange={(e) => updateField('organization', e.target.value)}
-            placeholder="e.g. Apex Global"
+            placeholder="e.g. Company or Institute Name"
             className="w-full px-3 py-1.5 text-xs rounded-lg bg-zinc-900 border border-zinc-700 focus:border-yellow-400 focus:outline-none text-zinc-200"
           />
         </div>

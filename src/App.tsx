@@ -34,7 +34,9 @@ import {
   BatchItem,
 } from './types';
 import { generateQRCodeDataUrl } from './services/qrService';
-import { uploadDocumentToDrive } from './services/googleDrive';
+import { uploadDocumentToDrive, extractDriveFileId } from './services/googleDrive';
+import { generateCoverPagePdf, mergeCoverWithPdf } from './services/pdfService';
+import confetti from 'canvas-confetti';
 import {
   Sparkles,
   HardDrive,
@@ -51,6 +53,11 @@ import {
   Layout,
   UploadCloud,
   FileCheck2,
+  Eye,
+  Loader2,
+  Layers,
+  FileText,
+  AlertCircle,
 } from 'lucide-react';
 
 export default function App() {
@@ -59,12 +66,12 @@ export default function App() {
   const [isLoggingIn, setIsLoggingIn] = useState(false);
   const [activeTab, setActiveTab] = useState<'generator' | 'batch' | 'library'>('generator');
 
-  // Linear 5-Step Workflow State requested by user:
+  // Linear 5-Step Workflow State:
   // Step 1: Upload File
   // Step 2: Choosing Theme
   // Step 3: Choosing Colour Carousel
   // Step 4: Uploading to Drive
-  // Step 5: Getting same doc with new cover attached and QR of public link
+  // Step 5: View & Download New Version
   const [currentStep, setCurrentStep] = useState<1 | 2 | 3 | 4 | 5>(1);
 
   // Full-screen typewriter welcome state
@@ -80,16 +87,17 @@ export default function App() {
   const [isLoadingDoc, setIsLoadingDoc] = useState(false);
 
   const initialTheme = COVER_THEMES[0];
+
+  // Pristine Cover Data: NO fake/raw mock strings, all optional fields are empty by default!
   const [coverData, setCoverData] = useState<CoverData>({
-    title: 'Enterprise Architecture & Cloud Strategy',
-    subtitle: 'Official Technical Reference & Governance Guidelines',
-    preparedBy: '',
-    organization: 'Apex Global Enterprises',
-    documentId: `DOC-${new Date().getFullYear()}-001`,
+    title: '', // Empty by default; populated automatically from uploaded document
+    subtitle: '', // Optional
+    preparedBy: '', // Optional
+    organization: '', // Optional
+    documentId: '', // Optional
     date: new Date().toLocaleDateString('en-US', { year: 'numeric', month: 'long', day: 'numeric' }),
-    summary:
-      'This document outlines standardized cloud architecture patterns, security compliance controls, and operational guidelines. Scan the embedded QR code to access the active soft copy on Google Drive.',
-    qrCallToAction: 'Scan with phone camera to view full soft copy on Google Drive',
+    summary: '', // Optional
+    qrCallToAction: 'Scan with phone camera to view full soft copy on Google Drive.',
     imageUrl: initialTheme.defaultImage,
     themeId: initialTheme.id,
     primaryColor: initialTheme.primaryColor,
@@ -117,6 +125,11 @@ export default function App() {
   const [uploadProgress, setUploadProgress] = useState({ percent: 0, status: '' });
   const [qrDataUrl, setQrDataUrl] = useState<string | null>(null);
 
+  // Direct downloading state
+  const [isDownloading, setIsDownloading] = useState(false);
+  const [downloadSuccessMsg, setDownloadSuccessMsg] = useState<string | null>(null);
+  const [downloadErrorMsg, setDownloadErrorMsg] = useState<string | null>(null);
+
   // Batch items state
   const [batchItems, setBatchItems] = useState<BatchItem[]>([]);
 
@@ -131,6 +144,9 @@ export default function App() {
 
   // History state
   const [savedDocs, setSavedDocs] = useState<SavedDocRecord[]>([]);
+
+  // Mobile preview toggle
+  const [mobilePreviewOpen, setMobilePreviewOpen] = useState(false);
 
   // Initialize auth
   useEffect(() => {
@@ -185,10 +201,10 @@ export default function App() {
 
   // Generate QR code whenever the Drive Link or QR styling changes
   useEffect(() => {
-    // QR code is generated strictly from the verified public Drive link or fallback Drive URL
+    // Verified public Drive link or base Drive URL
     const targetUrl =
       uploadResult?.webViewLink ||
-      'https://drive.google.com/drive/my-drive';
+      'https://drive.google.com';
 
     generateQRCodeDataUrl({
       url: targetUrl,
@@ -207,7 +223,7 @@ export default function App() {
     coverData.logoUrl,
   ]);
 
-  // Google Login Handler: Triggers the Typewriter Welcome Screen upon success
+  // Google Login Handler
   const handleLogin = async () => {
     setIsLoggingIn(true);
     try {
@@ -271,7 +287,7 @@ export default function App() {
       // Save document record in Firebase Firestore
       const record: SavedDocRecord = {
         id: `doc_${Date.now()}_${Math.random().toString(36).substring(2, 7)}`,
-        title: coverData.title,
+        title: coverData.title || currentDoc.name,
         fileName: currentDoc.name,
         fileSize: currentDoc.size,
         fileType: currentDoc.extension,
@@ -288,32 +304,66 @@ export default function App() {
       // Automatically transition to Step 5: Getting same doc with cover and QR!
       setTimeout(() => {
         setCurrentStep(5);
-      }, 800);
+      }, 700);
     } catch (err: any) {
       console.error('Drive upload failed:', err);
-      alert('Failed to upload to Google Drive: ' + (err.message || 'Check permissions.'));
+      alert(err.message || 'Failed to upload to Google Drive.');
     } finally {
       setIsUploading(false);
     }
   };
 
-  // When a document is parsed, update form title, summary, etc.
+  // Handle manual link paste fallback
+  const handleManualLinkSubmit = async (link: string) => {
+    const fileId = extractDriveFileId(link) || 'manual';
+    const result: DriveUploadResult = {
+      fileId,
+      name: currentDoc?.name || 'Document',
+      webViewLink: link,
+      publicPermissionGranted: true,
+    };
+    setUploadResult(result);
+
+    if (currentDoc) {
+      const record: SavedDocRecord = {
+        id: `doc_${Date.now()}_${Math.random().toString(36).substring(2, 7)}`,
+        title: coverData.title || currentDoc.name,
+        fileName: currentDoc.name,
+        fileSize: currentDoc.size,
+        fileType: currentDoc.extension,
+        driveFileId: fileId,
+        driveLink: link,
+        coverData,
+        createdAt: Date.now(),
+        userEmail: user?.email || 'user@example.com',
+      };
+      await saveDocumentRecord(record);
+      refreshDocuments();
+    }
+
+    setCurrentStep(5);
+  };
+
+  // When a document is parsed, update form title without fake data
   const handleDocumentParsed = (doc: UploadedDocInfo) => {
     setCurrentDoc(doc);
     setUploadResult(null); // Reset upload for new document
 
     setCoverData((prev) => ({
       ...prev,
-      title: doc.extractedTitle || prev.title,
-      summary: doc.extractedText || prev.summary,
-      documentId: `DOC-${new Date().getFullYear()}-${Math.floor(100 + Math.random() * 900)}`,
+      title: doc.extractedTitle || doc.name,
+      // Leave optional fields empty instead of injecting fake corporate data!
+      subtitle: '',
+      organization: prev.organization || '',
+      summary: '',
+      documentId: '',
     }));
 
     // Move to Step 2: Choosing the Theme
     setCurrentStep(2);
   };
 
-  // Theme selection handler (preserves user custom colors/fonts/images)
+  // Theme selection handler
   const handleSelectTheme = (theme: CoverTheme) => {
     setCoverData((prev) => ({
       ...prev,
@@ -321,13 +371,60 @@ export default function App() {
       primaryColor: theme.primaryColor,
       accentColor: prev.accentColor || theme.accentColor,
       font: prev.font || theme.defaultFont,
-      imageUrl: prev.imageUrl || theme.defaultImage,
+      imageUrl: theme.defaultImage,
     }));
   };
 
   // Direct print trigger
   const handlePrint = () => {
     window.print();
+  };
+
+  // Instant Merged PDF Download directly from Step 5
+  const handleDirectDownloadMergedPdf = async () => {
+    if (!qrDataUrl) {
+      alert('QR code is still being prepared. Please wait a moment.');
+      return;
+    }
+
+    setIsDownloading(true);
+    setDownloadErrorMsg(null);
+    setDownloadSuccessMsg(null);
+
+    try {
+      let pdfBytes: Uint8Array;
+
+      if (currentDoc?.pdfArrayBuffer) {
+        // Merge Cover Page with uploaded original PDF
+        pdfBytes = await mergeCoverWithPdf(currentDoc.pdfArrayBuffer, coverData, qrDataUrl);
+      } else {
+        // Generate standalone Cover Page PDF
+        const coverPdf = await generateCoverPagePdf(coverData, qrDataUrl);
+        pdfBytes = await coverPdf.save();
+      }
+
+      // Download file safely
+      const safeBuffer = new Uint8Array(pdfBytes).slice().buffer;
+      const blob = new Blob([safeBuffer as ArrayBuffer], { type: 'application/pdf' });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      const safeFilename = (coverData.title || currentDoc?.name || 'Document').replace(/[^a-zA-Z0-9_-]/g, '_');
+      a.download = `${safeFilename}_with_QR_Cover.pdf`;
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+      URL.revokeObjectURL(url);
+
+      confetti({ particleCount: 60, spread: 70, origin: { y: 0.7 } });
+      setDownloadSuccessMsg('Document with QR Cover downloaded successfully!');
+      setTimeout(() => setDownloadSuccessMsg(null), 3000);
+    } catch (err: any) {
+      console.error('Download error:', err);
+      setDownloadErrorMsg(err.message || 'Failed to generate PDF');
+    } finally {
+      setIsDownloading(false);
+    }
   };
 
   // Select document from library
@@ -347,6 +444,14 @@ export default function App() {
   const handleStartOver = () => {
     setCurrentDoc(null);
     setUploadResult(null);
+    setCoverData((prev) => ({
+      ...prev,
+      title: '',
+      subtitle: '',
+      organization: '',
+      documentId: '',
+      summary: '',
+    }));
     setCurrentStep(1);
   };
 
@@ -354,13 +459,13 @@ export default function App() {
   const originalPagesCount = currentDoc?.pageCount || (currentDoc?.renderedPagePreviews?.length ?? (currentDoc ? 1 : 0));
   const totalPages = 1 + (currentDoc ? originalPagesCount : 0);
 
-  // Steps definition for top Stepper
+  // Stepper definition
   const STEPS_NAV = [
     { num: 1, label: 'Upload File', icon: UploadCloud },
-    { num: 2, label: 'Choose Theme', icon: Layout },
-    { num: 3, label: 'Colour Carousel', icon: Palette },
-    { num: 4, label: 'Upload to Drive', icon: HardDrive },
-    { num: 5, label: 'View & Download', icon: FileCheck2 },
+    { num: 2, label: 'Theme', icon: Layout },
+    { num: 3, label: 'Colours', icon: Palette },
+    { num: 4, label: 'Drive QR', icon: HardDrive },
+    { num: 5, label: 'Download', icon: FileCheck2 },
   ];
 
   return (
@@ -424,10 +529,10 @@ export default function App() {
             }}
           />
         ) : (
-          /* STEP-BY-STEP WORKFLOW STUDIO (1 -> 2 -> 3 -> 4 -> 5) */
-          <div className="space-y-6">
+          /* CONSTANT TWO-COLUMN WORKFLOW: LEFT SIDE EDIT & MANAGE | RIGHT SIDE CONSTANT DOCUMENT VIEW */
+          <div className="space-y-5">
             {/* STEP PROGRESS INDICATOR BAR */}
-            <div className="bg-[#121215] border border-yellow-500/25 rounded-2xl p-4 shadow-lg">
+            <div className="bg-[#121215] border border-yellow-500/25 rounded-2xl p-3 shadow-lg">
               <div className="grid grid-cols-5 gap-2">
                 {STEPS_NAV.map((step) => {
                   const isActive = currentStep === step.num;
@@ -439,12 +544,12 @@ export default function App() {
                       key={step.num}
                       type="button"
                       onClick={() => {
-                        // Allow navigation if step is unlocked
+                        // Allow navigation if step is unlocked or doc is uploaded
                         if (step.num === 1 || currentDoc || isCompleted) {
                           setCurrentStep(step.num as any);
                         }
                       }}
-                      className={`flex flex-col sm:flex-row items-center justify-center sm:justify-start gap-2 p-2.5 rounded-xl border transition-all text-left cursor-pointer ${
+                      className={`flex flex-col sm:flex-row items-center justify-center sm:justify-start gap-2 p-2 rounded-xl border transition-all text-left cursor-pointer ${
                         isActive
                           ? 'border-yellow-400 bg-yellow-400 text-black font-bold shadow-[0_0_20px_rgba(250,204,21,0.25)]'
                           : isCompleted
@@ -481,287 +586,286 @@ export default function App() {
               </div>
             </div>
 
-            {/* STEP 1: UPLOAD THE FILE */}
-            {currentStep === 1 && (
-              <div className="space-y-6">
-                <DocumentUploader
-                  currentDoc={currentDoc}
-                  onDocumentParsed={handleDocumentParsed}
-                  isLoading={isLoadingDoc}
-                  setIsLoading={setIsLoadingDoc}
-                  onSwitchToBatch={() => setActiveTab('batch')}
-                />
+            {/* CONSTANT VIEWPORT SPLIT: LEFT SIDE EDIT & RIGHT SIDE DOCUMENT VIEW */}
+            <div className="grid grid-cols-1 lg:grid-cols-12 gap-6 items-start">
+              {/* LEFT SIDE: STEP-BY-STEP EDIT & MANAGEMENT (7 COLS) */}
+              <div className="lg:col-span-7 space-y-5">
+                {/* STEP 1: UPLOAD THE FILE */}
+                {currentStep === 1 && (
+                  <div className="space-y-4">
+                    <DocumentUploader
+                      currentDoc={currentDoc}
+                      onDocumentParsed={handleDocumentParsed}
+                      isLoading={isLoadingDoc}
+                      setIsLoading={setIsLoadingDoc}
+                      onSwitchToBatch={() => setActiveTab('batch')}
+                    />
 
-                {currentDoc && (
-                  <div className="flex items-center justify-between p-4 bg-[#121215] rounded-2xl border border-yellow-500/30">
-                    <div className="flex items-center gap-3">
-                      <div className="w-3 h-3 rounded-full bg-emerald-400 animate-ping" />
-                      <div>
-                        <p className="text-xs font-bold text-white">
-                          Document Loaded: <span className="text-yellow-400">{currentDoc.name}</span>
-                        </p>
-                        <p className="text-[11px] text-zinc-400">
-                          {currentDoc.pageCount || 1} pages detected. Ready to design cover page.
-                        </p>
+                    {currentDoc && (
+                      <div className="flex items-center justify-between p-4 bg-[#121215] rounded-2xl border border-yellow-500/30">
+                        <div className="flex items-center gap-3">
+                          <div className="w-3 h-3 rounded-full bg-emerald-400 animate-ping" />
+                          <div>
+                            <p className="text-xs font-bold text-white">
+                              Document Loaded: <span className="text-yellow-400">{currentDoc.name}</span>
+                            </p>
+                            <p className="text-[11px] text-zinc-400">
+                              {currentDoc.pageCount || 1} pages detected. Ready to pick cover theme.
+                            </p>
+                          </div>
+                        </div>
+                        <button
+                          type="button"
+                          onClick={() => setCurrentStep(2)}
+                          className="inline-flex items-center gap-2 px-5 py-2.5 bg-yellow-400 hover:bg-yellow-300 text-black font-extrabold text-xs rounded-xl shadow-[0_0_20px_rgba(250,204,21,0.3)] transition-all cursor-pointer"
+                        >
+                          <span>Step 2: Choose Theme</span>
+                          <ArrowRight className="w-4 h-4 stroke-[3]" />
+                        </button>
                       </div>
-                    </div>
-                    <button
-                      type="button"
-                      onClick={() => setCurrentStep(2)}
-                      className="inline-flex items-center gap-2 px-5 py-2.5 bg-yellow-400 hover:bg-yellow-300 text-black font-extrabold text-xs rounded-xl shadow-[0_0_20px_rgba(250,204,21,0.3)] transition-all cursor-pointer"
-                    >
-                      <span>Continue to Step 2: Choose Theme</span>
-                      <ArrowRight className="w-4 h-4 stroke-[3]" />
-                    </button>
+                    )}
                   </div>
                 )}
-              </div>
-            )}
 
-            {/* STEP 2: CHOOSING THE THEME */}
-            {currentStep === 2 && (
-              <div className="space-y-6">
-                <div className="grid grid-cols-1 lg:grid-cols-12 gap-6 items-start">
-                  <div className="lg:col-span-7">
+                {/* STEP 2: CHOOSING THE THEME */}
+                {currentStep === 2 && (
+                  <div className="space-y-4">
                     <ThemeSelector
                       selectedThemeId={coverData.themeId}
                       onSelectTheme={handleSelectTheme}
                     />
-                  </div>
-                  <div className="lg:col-span-5 sticky top-20">
-                    <div className="p-3 bg-zinc-900/90 rounded-2xl border border-zinc-800 space-y-3">
-                      <div className="flex items-center justify-between px-1">
-                        <span className="text-xs font-bold text-yellow-400 uppercase tracking-wider">
-                          Theme Live Preview
-                        </span>
-                        <span className="text-[11px] text-zinc-400">Page 1 of {totalPages}</span>
-                      </div>
-                      <CoverPreview
-                        coverData={coverData}
-                        currentDoc={currentDoc}
-                        driveLink={uploadResult?.webViewLink || null}
-                        qrDataUrl={qrDataUrl}
-                        onPrint={handlePrint}
-                        onOpenExportModal={() => setIsExportModalOpen(true)}
-                        onOpenEmailModal={() => setIsEmailModalOpen(true)}
-                        isDriveUploaded={!!uploadResult}
-                      />
+
+                    <div className="flex items-center justify-between p-4 bg-[#121215] rounded-2xl border border-yellow-500/25">
+                      <button
+                        type="button"
+                        onClick={() => setCurrentStep(1)}
+                        className="inline-flex items-center gap-2 px-4 py-2 bg-zinc-900 hover:bg-zinc-800 text-zinc-300 text-xs font-bold rounded-xl border border-zinc-800 cursor-pointer"
+                      >
+                        <ArrowLeft className="w-4 h-4" />
+                        <span>Back: Step 1</span>
+                      </button>
+
+                      <button
+                        type="button"
+                        onClick={() => setCurrentStep(3)}
+                        className="inline-flex items-center gap-2 px-5 py-2.5 bg-yellow-400 hover:bg-yellow-300 text-black font-extrabold text-xs rounded-xl shadow-[0_0_20px_rgba(250,204,21,0.3)] transition-all cursor-pointer"
+                      >
+                        <span>Step 3: Colour Carousel</span>
+                        <ArrowRight className="w-4 h-4 stroke-[3]" />
+                      </button>
                     </div>
                   </div>
-                </div>
+                )}
 
-                {/* Step 2 Navigation Footer */}
-                <div className="flex items-center justify-between p-4 bg-[#121215] rounded-2xl border border-yellow-500/25">
-                  <button
-                    type="button"
-                    onClick={() => setCurrentStep(1)}
-                    className="inline-flex items-center gap-2 px-4 py-2 bg-zinc-900 hover:bg-zinc-800 text-zinc-300 text-xs font-bold rounded-xl border border-zinc-800 cursor-pointer"
-                  >
-                    <ArrowLeft className="w-4 h-4" />
-                    <span>Back to Step 1: Upload</span>
-                  </button>
-
-                  <button
-                    type="button"
-                    onClick={() => setCurrentStep(3)}
-                    className="inline-flex items-center gap-2 px-5 py-2.5 bg-yellow-400 hover:bg-yellow-300 text-black font-extrabold text-xs rounded-xl shadow-[0_0_20px_rgba(250,204,21,0.3)] transition-all cursor-pointer"
-                  >
-                    <span>Continue to Step 3: Colour Carousel</span>
-                    <ArrowRight className="w-4 h-4 stroke-[3]" />
-                  </button>
-                </div>
-              </div>
-            )}
-
-            {/* STEP 3: CHOOSING THE COLOUR CAROUSEL */}
-            {currentStep === 3 && (
-              <div className="space-y-6">
-                <div className="grid grid-cols-1 lg:grid-cols-12 gap-6 items-start">
-                  <div className="lg:col-span-7">
+                {/* STEP 3: CHOOSING THE COLOUR CAROUSEL */}
+                {currentStep === 3 && (
+                  <div className="space-y-4">
                     <ColorCarousel
                       coverData={coverData}
                       onChange={setCoverData}
                     />
+
+                    <div className="flex items-center justify-between p-4 bg-[#121215] rounded-2xl border border-yellow-500/25">
+                      <button
+                        type="button"
+                        onClick={() => setCurrentStep(2)}
+                        className="inline-flex items-center gap-2 px-4 py-2 bg-zinc-900 hover:bg-zinc-800 text-zinc-300 text-xs font-bold rounded-xl border border-zinc-800 cursor-pointer"
+                      >
+                        <ArrowLeft className="w-4 h-4" />
+                        <span>Back: Step 2</span>
+                      </button>
+
+                      <button
+                        type="button"
+                        onClick={() => setCurrentStep(4)}
+                        className="inline-flex items-center gap-2 px-5 py-2.5 bg-yellow-400 hover:bg-yellow-300 text-black font-extrabold text-xs rounded-xl shadow-[0_0_20px_rgba(250,204,21,0.3)] transition-all cursor-pointer"
+                      >
+                        <span>Step 4: Upload to Drive</span>
+                        <ArrowRight className="w-4 h-4 stroke-[3]" />
+                      </button>
+                    </div>
                   </div>
-                  <div className="lg:col-span-5 sticky top-20">
-                    <div className="p-3 bg-zinc-900/90 rounded-2xl border border-zinc-800 space-y-3">
-                      <div className="flex items-center justify-between px-1">
-                        <span className="text-xs font-bold text-yellow-400 uppercase tracking-wider">
-                          Real-Time Color & Font Preview
-                        </span>
-                        <span className="text-[11px] text-zinc-400">Page 1 of {totalPages}</span>
+                )}
+
+                {/* STEP 4: UPLOADING TO DRIVE */}
+                {currentStep === 4 && (
+                  <div className="space-y-4">
+                    <DriveSyncPanel
+                      uploadResult={uploadResult}
+                      isUploading={isUploading}
+                      uploadProgress={uploadProgress}
+                      onUploadClick={handleUploadToDrive}
+                      canUpload={!!currentDoc && !isUploading}
+                      needsAuth={!token}
+                      onLoginClick={() => {
+                        setAuthGateAction('Connect Google Drive to Upload Document');
+                        setIsAuthGateOpen(true);
+                      }}
+                      onManualLinkSubmit={handleManualLinkSubmit}
+                    />
+
+                    <div className="flex items-center justify-between p-4 bg-[#121215] rounded-2xl border border-yellow-500/25">
+                      <button
+                        type="button"
+                        onClick={() => setCurrentStep(3)}
+                        className="inline-flex items-center gap-2 px-4 py-2 bg-zinc-900 hover:bg-zinc-800 text-zinc-300 text-xs font-bold rounded-xl border border-zinc-800 cursor-pointer"
+                      >
+                        <ArrowLeft className="w-4 h-4" />
+                        <span>Back: Step 3</span>
+                      </button>
+
+                      {uploadResult ? (
+                        <button
+                          type="button"
+                          onClick={() => setCurrentStep(5)}
+                          className="inline-flex items-center gap-2 px-5 py-2.5 bg-yellow-400 hover:bg-yellow-300 text-black font-extrabold text-xs rounded-xl shadow-[0_0_20px_rgba(250,204,21,0.3)] transition-all cursor-pointer"
+                        >
+                          <span>Step 5: View & Download</span>
+                          <ArrowRight className="w-4 h-4 stroke-[3]" />
+                        </button>
+                      ) : (
+                        <button
+                          type="button"
+                          onClick={handleUploadToDrive}
+                          disabled={isUploading || !currentDoc}
+                          className="inline-flex items-center gap-2 px-5 py-2.5 bg-yellow-400 hover:bg-yellow-300 disabled:opacity-50 text-black font-extrabold text-xs rounded-xl shadow-[0_0_20px_rgba(250,204,21,0.3)] transition-all cursor-pointer"
+                        >
+                          <HardDrive className="w-4 h-4" />
+                          <span>{isUploading ? 'Uploading to Drive...' : 'Upload Now & Create Public QR'}</span>
+                        </button>
+                      )}
+                    </div>
+                  </div>
+                )}
+
+                {/* STEP 5: VIEW COMPLETE DOCUMENT & DOWNLOAD */}
+                {currentStep === 5 && (
+                  <div className="space-y-4">
+                    {/* Primary Output Actions */}
+                    <div className="bg-[#121215] rounded-2xl border border-yellow-500/40 p-5 shadow-lg space-y-4">
+                      <div>
+                        <h3 className="text-base font-bold text-white flex items-center gap-2">
+                          <span className="w-6 h-6 rounded-full bg-yellow-400 text-black text-xs font-black flex items-center justify-center">
+                            5
+                          </span>
+                          Download Merged Document & Distribute
+                        </h3>
+                        <p className="text-xs text-zinc-400 mt-0.5">
+                          Page 1 contains your custom cover with the verified Google Drive QR code prepended to all original pages.
+                        </p>
                       </div>
-                      <CoverPreview
-                        coverData={coverData}
-                        currentDoc={currentDoc}
-                        driveLink={uploadResult?.webViewLink || null}
-                        qrDataUrl={qrDataUrl}
-                        onPrint={handlePrint}
-                        onOpenExportModal={() => setIsExportModalOpen(true)}
-                        onOpenEmailModal={() => setIsEmailModalOpen(true)}
-                        isDriveUploaded={!!uploadResult}
-                      />
-                    </div>
-                  </div>
-                </div>
 
-                {/* Step 3 Navigation Footer */}
-                <div className="flex items-center justify-between p-4 bg-[#121215] rounded-2xl border border-yellow-500/25">
-                  <button
-                    type="button"
-                    onClick={() => setCurrentStep(2)}
-                    className="inline-flex items-center gap-2 px-4 py-2 bg-zinc-900 hover:bg-zinc-800 text-zinc-300 text-xs font-bold rounded-xl border border-zinc-800 cursor-pointer"
-                  >
-                    <ArrowLeft className="w-4 h-4" />
-                    <span>Back to Step 2: Theme</span>
-                  </button>
+                      {/* Download Status Notification */}
+                      {downloadSuccessMsg && (
+                        <div className="p-3 bg-emerald-950/40 border border-emerald-500/40 rounded-xl text-xs text-emerald-300 flex items-center gap-2">
+                          <CheckCircle2 className="w-4 h-4 flex-shrink-0" />
+                          <span>{downloadSuccessMsg}</span>
+                        </div>
+                      )}
 
-                  <button
-                    type="button"
-                    onClick={() => setCurrentStep(4)}
-                    className="inline-flex items-center gap-2 px-5 py-2.5 bg-yellow-400 hover:bg-yellow-300 text-black font-extrabold text-xs rounded-xl shadow-[0_0_20px_rgba(250,204,21,0.3)] transition-all cursor-pointer"
-                  >
-                    <span>Continue to Step 4: Upload to Drive</span>
-                    <ArrowRight className="w-4 h-4 stroke-[3]" />
-                  </button>
-                </div>
-              </div>
-            )}
+                      {downloadErrorMsg && (
+                        <div className="p-3 bg-red-950/40 border border-red-500/40 rounded-xl text-xs text-red-300 flex items-center gap-2">
+                          <AlertCircle className="w-4 h-4 flex-shrink-0" />
+                          <span>{downloadErrorMsg}</span>
+                        </div>
+                      )}
 
-            {/* STEP 4: UPLOADING TO DRIVE */}
-            {currentStep === 4 && (
-              <div className="space-y-6">
-                <DriveSyncPanel
-                  uploadResult={uploadResult}
-                  isUploading={isUploading}
-                  uploadProgress={uploadProgress}
-                  onUploadClick={handleUploadToDrive}
-                  canUpload={!!currentDoc && !isUploading}
-                  needsAuth={!token}
-                  onLoginClick={() => {
-                    setAuthGateAction('Connect Google Drive to Upload Document');
-                    setIsAuthGateOpen(true);
-                  }}
-                />
-
-                {/* Step 4 Navigation Footer */}
-                <div className="flex items-center justify-between p-4 bg-[#121215] rounded-2xl border border-yellow-500/25">
-                  <button
-                    type="button"
-                    onClick={() => setCurrentStep(3)}
-                    className="inline-flex items-center gap-2 px-4 py-2 bg-zinc-900 hover:bg-zinc-800 text-zinc-300 text-xs font-bold rounded-xl border border-zinc-800 cursor-pointer"
-                  >
-                    <ArrowLeft className="w-4 h-4" />
-                    <span>Back to Step 3: Colors</span>
-                  </button>
-
-                  {uploadResult ? (
-                    <button
-                      type="button"
-                      onClick={() => setCurrentStep(5)}
-                      className="inline-flex items-center gap-2 px-5 py-2.5 bg-yellow-400 hover:bg-yellow-300 text-black font-extrabold text-xs rounded-xl shadow-[0_0_20px_rgba(250,204,21,0.3)] transition-all cursor-pointer"
-                    >
-                      <span>Continue to Step 5: View & Download</span>
-                      <ArrowRight className="w-4 h-4 stroke-[3]" />
-                    </button>
-                  ) : (
-                    <button
-                      type="button"
-                      onClick={handleUploadToDrive}
-                      disabled={isUploading || !currentDoc}
-                      className="inline-flex items-center gap-2 px-5 py-2.5 bg-yellow-400 hover:bg-yellow-300 disabled:opacity-50 text-black font-extrabold text-xs rounded-xl shadow-[0_0_20px_rgba(250,204,21,0.3)] transition-all cursor-pointer"
-                    >
-                      <HardDrive className="w-4 h-4" />
-                      <span>{isUploading ? 'Uploading to Drive...' : 'Upload Now to Drive & Create QR'}</span>
-                    </button>
-                  )}
-                </div>
-              </div>
-            )}
-
-            {/* STEP 5: GETTING SAME DOC WITH NEW COVER ATTACHED AND QR OF PUBLIC LINK */}
-            {currentStep === 5 && (
-              <div className="space-y-6">
-                {/* Result Overview Banner */}
-                <div className="p-4 bg-gradient-to-r from-emerald-950/40 via-zinc-900 to-[#121215] border border-emerald-500/40 rounded-2xl flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4">
-                  <div className="flex items-center gap-3">
-                    <div className="w-10 h-10 rounded-xl bg-emerald-400/20 text-emerald-400 flex items-center justify-center font-bold border border-emerald-400/30">
-                      <CheckCircle2 className="w-6 h-6 stroke-[2.5]" />
-                    </div>
-                    <div>
-                      <h3 className="text-sm font-bold text-white flex items-center gap-2">
-                        Document Merged with Active Google Drive QR Cover
-                        <span className="px-2 py-0.5 rounded text-[10px] font-mono font-bold bg-yellow-400 text-black">
-                          {totalPages} Pages Total
-                        </span>
-                      </h3>
-                      <p className="text-xs text-zinc-300">
-                        {currentDoc ? (
+                      {/* 1-Click Primary Download Button */}
+                      <button
+                        type="button"
+                        onClick={handleDirectDownloadMergedPdf}
+                        disabled={isDownloading}
+                        className="w-full py-3.5 px-4 bg-yellow-400 hover:bg-yellow-300 text-black font-extrabold text-sm rounded-xl shadow-[0_0_25px_rgba(250,204,21,0.35)] transition-all flex items-center justify-center gap-2 cursor-pointer disabled:opacity-50"
+                      >
+                        {isDownloading ? (
                           <>
-                            Page 1 = Custom Cover with scannable QR code. Pages 2 to {totalPages} = Original document.
+                            <Loader2 className="w-5 h-5 animate-spin" />
+                            <span>Merging Cover & Generating PDF...</span>
                           </>
                         ) : (
-                          'Ready to preview and download.'
+                          <>
+                            <Download className="w-5 h-5 stroke-[2.5]" />
+                            <span>Download Merged Document (All {totalPages} Pages PDF)</span>
+                          </>
                         )}
-                      </p>
+                      </button>
+
+                      {/* Secondary Action Grid: Print, Share via Email, Standalone Cover */}
+                      <div className="grid grid-cols-1 sm:grid-cols-3 gap-2.5 pt-1">
+                        <button
+                          type="button"
+                          onClick={handlePrint}
+                          className="py-2.5 px-3 bg-zinc-900 hover:bg-zinc-800 text-zinc-200 border border-zinc-800 text-xs font-bold rounded-xl flex items-center justify-center gap-2 cursor-pointer transition-colors"
+                        >
+                          <Printer className="w-4 h-4 text-yellow-400" />
+                          <span>Print All Pages</span>
+                        </button>
+
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setEmailShareTarget({
+                              title: coverData.title || currentDoc?.name || 'Document',
+                              link: uploadResult?.webViewLink || 'https://drive.google.com',
+                              qrUrl: qrDataUrl || undefined,
+                            });
+                            setIsEmailModalOpen(true);
+                          }}
+                          className="py-2.5 px-3 bg-zinc-900 hover:bg-zinc-800 text-zinc-200 border border-zinc-800 text-xs font-bold rounded-xl flex items-center justify-center gap-2 cursor-pointer transition-colors"
+                        >
+                          <Mail className="w-4 h-4 text-yellow-400" />
+                          <span>Share via Email</span>
+                        </button>
+
+                        <button
+                          type="button"
+                          onClick={() => setIsExportModalOpen(true)}
+                          className="py-2.5 px-3 bg-zinc-900 hover:bg-zinc-800 text-zinc-200 border border-zinc-800 text-xs font-bold rounded-xl flex items-center justify-center gap-2 cursor-pointer transition-colors"
+                        >
+                          <Layers className="w-4 h-4 text-yellow-400" />
+                          <span>More Export Options</span>
+                        </button>
+                      </div>
+                    </div>
+
+                    {/* Step 5 Navigation Footer */}
+                    <div className="flex items-center justify-between p-4 bg-[#121215] rounded-2xl border border-zinc-800">
+                      <button
+                        type="button"
+                        onClick={() => setCurrentStep(3)}
+                        className="inline-flex items-center gap-2 px-4 py-2 bg-zinc-900 hover:bg-zinc-800 text-zinc-300 text-xs font-bold rounded-xl border border-zinc-800 cursor-pointer"
+                      >
+                        <ArrowLeft className="w-4 h-4" />
+                        <span>Edit Colors & Theme</span>
+                      </button>
+
+                      <button
+                        type="button"
+                        onClick={handleStartOver}
+                        className="inline-flex items-center gap-2 px-4 py-2 bg-zinc-800 hover:bg-zinc-700 text-white text-xs font-bold rounded-xl cursor-pointer"
+                      >
+                        <RotateCcw className="w-3.5 h-3.5" />
+                        <span>Upload Another Document</span>
+                      </button>
                     </div>
                   </div>
+                )}
+              </div>
 
-                  <div className="flex items-center gap-2">
-                    <button
-                      type="button"
-                      onClick={() => setIsExportModalOpen(true)}
-                      className="inline-flex items-center gap-1.5 px-4 py-2 bg-yellow-400 hover:bg-yellow-300 text-black font-extrabold text-xs rounded-xl shadow-[0_0_20px_rgba(250,204,21,0.3)] cursor-pointer transition-all"
-                    >
-                      <Download className="w-4 h-4 stroke-[2.5]" />
-                      <span>Download Merged PDF</span>
-                    </button>
-                  </div>
-                </div>
-
-                {/* Multi-Page Full Document Preview Stage (Page 1 Cover + Pages 2..N) */}
-                <div className="bg-[#121215] p-5 rounded-2xl border border-yellow-500/25">
+              {/* RIGHT SIDE: CONSTANT STICKY DOCUMENT VIEW (5 COLS) */}
+              <div className="lg:col-span-5 lg:sticky lg:top-20 space-y-3">
+                <div className="p-3.5 bg-zinc-900/90 rounded-2xl border border-zinc-800 shadow-xl space-y-3">
                   <CoverPreview
                     coverData={coverData}
                     currentDoc={currentDoc}
                     driveLink={uploadResult?.webViewLink || null}
                     qrDataUrl={qrDataUrl}
                     onPrint={handlePrint}
-                    onOpenExportModal={() => setIsExportModalOpen(true)}
-                    onOpenEmailModal={() => {
-                      setEmailShareTarget({
-                        title: coverData.title,
-                        link: uploadResult?.webViewLink || 'https://drive.google.com',
-                        qrUrl: qrDataUrl || undefined,
-                      });
-                      setIsEmailModalOpen(true);
-                    }}
                     isDriveUploaded={!!uploadResult}
                   />
                 </div>
-
-                {/* Step 5 Footer Controls: Start Over or Modify Details */}
-                <div className="flex items-center justify-between p-4 bg-[#121215] rounded-2xl border border-zinc-800">
-                  <button
-                    type="button"
-                    onClick={() => setCurrentStep(3)}
-                    className="inline-flex items-center gap-2 px-4 py-2 bg-zinc-900 hover:bg-zinc-800 text-zinc-300 text-xs font-bold rounded-xl border border-zinc-800 cursor-pointer"
-                  >
-                    <ArrowLeft className="w-4 h-4" />
-                    <span>Edit Colors & Theme</span>
-                  </button>
-
-                  <button
-                    type="button"
-                    onClick={handleStartOver}
-                    className="inline-flex items-center gap-2 px-4 py-2 bg-zinc-800 hover:bg-zinc-700 text-white text-xs font-bold rounded-xl cursor-pointer"
-                  >
-                    <RotateCcw className="w-3.5 h-3.5" />
-                    <span>Upload Another Document</span>
-                  </button>
-                </div>
               </div>
-            )}
+            </div>
           </div>
         )}
       </main>
@@ -777,12 +881,12 @@ export default function App() {
         onPrint={handlePrint}
       />
 
-      {/* Email Share Modal via Gmail API */}
+      {/* Email Share Modal with 1-Click Web Gmail Fallback */}
       <EmailShareModal
         isOpen={isEmailModalOpen}
         onClose={() => setIsEmailModalOpen(false)}
         user={user}
-        documentTitle={emailShareTarget?.title || coverData.title}
+        documentTitle={emailShareTarget?.title || coverData.title || currentDoc?.name || 'Document'}
         driveLink={emailShareTarget?.link || uploadResult?.webViewLink || null}
         qrDataUrl={emailShareTarget?.qrUrl || qrDataUrl}
         onEmailSentSuccess={() => {

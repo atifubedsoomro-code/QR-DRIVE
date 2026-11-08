@@ -7,14 +7,12 @@ import {
   Maximize2,
   Minimize2,
   Printer,
-  Download,
-  Mail,
   ChevronLeft,
   ChevronRight,
   LayoutGrid,
   FileText,
-  Layers,
-  Sparkles,
+  CheckCircle2,
+  AlertCircle,
 } from 'lucide-react';
 
 interface CoverPreviewProps {
@@ -22,9 +20,7 @@ interface CoverPreviewProps {
   currentDoc: UploadedDocInfo | null;
   driveLink: string | null;
   qrDataUrl: string | null;
-  onPrint: () => void;
-  onOpenExportModal: () => void;
-  onOpenEmailModal: () => void;
+  onPrint?: () => void;
   isDriveUploaded: boolean;
 }
 
@@ -34,8 +30,6 @@ export const CoverPreview: React.FC<CoverPreviewProps> = ({
   driveLink,
   qrDataUrl,
   onPrint,
-  onOpenExportModal,
-  onOpenEmailModal,
   isDriveUploaded,
 }) => {
   const [isFullscreen, setIsFullscreen] = useState(false);
@@ -70,7 +64,7 @@ export const CoverPreview: React.FC<CoverPreviewProps> = ({
   // Effective colors
   const effectiveTitleColor = coverData.titleColor || (isDarkModeTheme ? '#ffffff' : coverData.primaryColor);
   const effectiveSubtitleColor = coverData.subtitleColor || coverData.accentColor;
-  const effectiveTextColor = coverData.textColor || (isDarkModeTheme ? '#e2e8f0' : '#334155');
+  const effectiveTextColor = coverData.textColor || (isDarkModeTheme ? '#cbd5e1' : '#334155');
 
   // Total pages calculation: 1 Cover Page + Original Document Pages
   const originalPagesCount = currentDoc?.pageCount || (currentDoc?.renderedPagePreviews?.length ?? (currentDoc ? 1 : 0));
@@ -80,7 +74,7 @@ export const CoverPreview: React.FC<CoverPreviewProps> = ({
   const renderCoverPage = (scale = 'normal') => (
     <div
       id="printable-cover-sheet"
-      className={`w-full max-w-[540px] aspect-[1/1.414] bg-white rounded-xl shadow-2xl border border-zinc-800 relative overflow-hidden flex flex-col justify-between transition-all duration-300 ${getFontFamily()} ${
+      className={`w-full max-w-[500px] aspect-[1/1.414] bg-white rounded-xl shadow-2xl border border-zinc-800 relative overflow-hidden flex flex-col justify-between transition-all duration-300 ${getFontFamily()} ${
         scale === 'thumbnail' ? 'pointer-events-none select-none text-[8px]' : ''
       }`}
       style={{
@@ -99,11 +93,11 @@ export const CoverPreview: React.FC<CoverPreviewProps> = ({
         />
       )}
 
-      {/* 1. Banner Top / Split Vertical style */}
+      {/* 1. Banner Top / Split Vertical Layout */}
       {(theme.layoutStyle === 'banner-top' || theme.layoutStyle === 'split-vertical') && !coverData.backgroundImageUrl && (
         <div className="relative z-10">
           <div
-            className="relative w-full h-44 overflow-hidden"
+            className="relative w-full h-40 overflow-hidden"
             style={{ backgroundColor: coverData.primaryColor }}
           >
             {coverData.imageUrl && (
@@ -115,10 +109,17 @@ export const CoverPreview: React.FC<CoverPreviewProps> = ({
             )}
             <div className="absolute inset-0 bg-gradient-to-t from-black/70 via-transparent to-black/30" />
 
-            <div className="absolute top-4 inset-x-6 flex items-center justify-between text-white text-[11px] font-medium tracking-wider">
-              <span className="font-mono opacity-90">{coverData.documentId}</span>
-              <span className="font-semibold uppercase tracking-wider">{coverData.organization}</span>
-            </div>
+            {/* Optional Header Metadata in Banner */}
+            {(coverData.documentId || coverData.organization) && (
+              <div className="absolute top-4 inset-x-6 flex items-center justify-between text-white text-[11px] font-medium tracking-wider">
+                {coverData.documentId ? (
+                  <span className="font-mono opacity-90">{coverData.documentId}</span>
+                ) : <span />}
+                {coverData.organization && (
+                  <span className="font-semibold uppercase tracking-wider">{coverData.organization}</span>
+                )}
+              </div>
+            )}
 
             <div
               className="absolute bottom-0 inset-x-0 h-1.5"
@@ -128,7 +129,7 @@ export const CoverPreview: React.FC<CoverPreviewProps> = ({
         </div>
       )}
 
-      {/* 2. Bordered Formal / Academic style */}
+      {/* 2. Bordered Formal Layout */}
       {theme.layoutStyle === 'bordered-formal' && (
         <div
           className="absolute inset-3 border-2 pointer-events-none rounded z-10"
@@ -141,7 +142,7 @@ export const CoverPreview: React.FC<CoverPreviewProps> = ({
         </div>
       )}
 
-      {/* 3. Minimal Frame style */}
+      {/* 3. Minimal Frame Layout */}
       {theme.layoutStyle === 'minimal-frame' && (
         <div
           className="absolute inset-4 border pointer-events-none z-10"
@@ -154,12 +155,22 @@ export const CoverPreview: React.FC<CoverPreviewProps> = ({
         </div>
       )}
 
-      {/* 4. Geometric / Cyber Grid style */}
+      {/* 4. Geometric / Cyber Grid Layout */}
       {theme.layoutStyle === 'geometric-grid' && (
         <div className="absolute inset-0 pointer-events-none z-10">
           <div className="h-1.5 w-full" style={{ backgroundColor: coverData.accentColor }} />
-          <div className="w-1.5 h-full absolute left-6 top-0" style={{ backgroundColor: `${coverData.accentColor}33` }} />
+          <div className="w-1.5 h-full absolute left-6 top-0" style={{ backgroundColor: `${coverData.accentColor}44` }} />
         </div>
+      )}
+
+      {/* 5. Card Centered Layout */}
+      {theme.layoutStyle === 'card-centered' && (
+        <div className="absolute inset-x-8 top-12 bottom-12 rounded-xl border pointer-events-none z-0" style={{ borderColor: `${coverData.accentColor}33`, backgroundColor: isDarkModeTheme ? '#18181b' : '#fafafa' }} />
+      )}
+
+      {/* 6. Bottom Accent Layout */}
+      {theme.layoutStyle === 'bottom-accent' && (
+        <div className="absolute inset-x-0 bottom-0 h-28 pointer-events-none z-0 opacity-15" style={{ backgroundColor: coverData.primaryColor }} />
       )}
 
       {/* Main Content Area */}
@@ -190,15 +201,20 @@ export const CoverPreview: React.FC<CoverPreviewProps> = ({
             </div>
           )}
 
-          {/* Header meta if not in banner top */}
-          {((theme.layoutStyle !== 'banner-top' && theme.layoutStyle !== 'split-vertical') || coverData.backgroundImageUrl) && (
+          {/* Header meta (ONLY rendered if provided!) */}
+          {((coverData.documentId || coverData.organization) &&
+            ((theme.layoutStyle !== 'banner-top' && theme.layoutStyle !== 'split-vertical') || coverData.backgroundImageUrl)) && (
             <div className="flex items-center justify-between text-[11px] mb-6 pb-2 border-b border-slate-200/50">
-              <span className="font-mono font-semibold" style={{ color: coverData.accentColor }}>
-                {coverData.documentId || 'REF: UNASSIGNED'}
-              </span>
-              <span className="font-bold uppercase tracking-wider text-xs">
-                {coverData.organization}
-              </span>
+              {coverData.documentId ? (
+                <span className="font-mono font-semibold" style={{ color: coverData.accentColor }}>
+                  {coverData.documentId}
+                </span>
+              ) : <span />}
+              {coverData.organization && (
+                <span className="font-bold uppercase tracking-wider text-xs">
+                  {coverData.organization}
+                </span>
+              )}
             </div>
           )}
 
@@ -208,7 +224,7 @@ export const CoverPreview: React.FC<CoverPreviewProps> = ({
               className="text-2xl sm:text-3xl font-extrabold leading-tight tracking-tight break-words"
               style={{ color: effectiveTitleColor }}
             >
-              {coverData.title || 'Untitled Document'}
+              {coverData.title || (currentDoc?.extractedTitle || currentDoc?.name || 'Document Title')}
             </h1>
 
             {coverData.subtitle && (
@@ -226,7 +242,7 @@ export const CoverPreview: React.FC<CoverPreviewProps> = ({
             />
           </div>
 
-          {/* Summary / Notes Paragraph */}
+          {/* Optional Summary Paragraph */}
           {coverData.summary && (
             <div className="mt-4">
               <p
@@ -254,14 +270,14 @@ export const CoverPreview: React.FC<CoverPreviewProps> = ({
             {coverData.date && (
               <div>
                 <span className="text-[10px] uppercase font-bold tracking-wider opacity-60 block">
-                  Date & Version
+                  Date
                 </span>
                 <span className="font-medium opacity-85">{coverData.date}</span>
               </div>
             )}
 
             <div className="pt-2 text-[9px] opacity-50 font-mono">
-              Official Soft Copy • Certified on Google Drive
+              Official Soft Copy • Google Drive
             </div>
           </div>
 
@@ -296,7 +312,7 @@ export const CoverPreview: React.FC<CoverPreviewProps> = ({
             </div>
 
             <p className="text-[9px] text-center max-w-[130px] mt-1.5 opacity-70 leading-tight">
-              {coverData.qrCallToAction || 'Scan with phone camera to view and download soft copy.'}
+              {coverData.qrCallToAction || 'Scan with phone camera to view full soft copy on Google Drive.'}
             </p>
           </div>
         </div>
@@ -306,62 +322,60 @@ export const CoverPreview: React.FC<CoverPreviewProps> = ({
 
   // Render Document Page (Page 2, 3, 4...)
   const renderDocumentPage = (pageIndex: number) => {
-    // 0 is Cover, so original page is pageIndex - 1
     const origIndex = pageIndex - 1;
     const previewImg = currentDoc?.renderedPagePreviews?.[origIndex];
 
     if (previewImg) {
       return (
-        <div className="w-full max-w-[540px] aspect-[1/1.414] bg-white rounded-xl shadow-2xl border border-zinc-800 overflow-hidden relative">
+        <div className="w-full max-w-[500px] aspect-[1/1.414] bg-white rounded-xl shadow-2xl border border-zinc-800 overflow-hidden relative">
           <img
             src={previewImg}
             alt={`Page ${pageIndex + 1}`}
             className="w-full h-full object-contain"
           />
-          <div className="absolute bottom-3 right-4 px-2 py-0.5 rounded bg-black/70 text-white font-mono text-[10px]">
+          <div className="absolute bottom-3 right-4 px-2 py-0.5 rounded bg-black/75 text-white font-mono text-[10px]">
             Page {pageIndex + 1} of {totalPages}
           </div>
         </div>
       );
     }
 
-    // Fallback visual document facsimile for Word documents / text files
+    // Clean page representation for Word docs or text documents (no mock companies!)
     return (
-      <div className="w-full max-w-[540px] aspect-[1/1.414] bg-white text-slate-900 rounded-xl shadow-2xl border border-zinc-800 p-8 sm:p-10 flex flex-col justify-between">
+      <div className="w-full max-w-[500px] aspect-[1/1.414] bg-white text-slate-900 rounded-xl shadow-2xl border border-zinc-800 p-8 sm:p-10 flex flex-col justify-between">
         <div>
           {/* Header */}
           <div className="flex items-center justify-between border-b border-slate-200 pb-3 text-xs text-slate-500 font-mono">
-            <span>{currentDoc?.name || 'Document'}</span>
-            <span>SECTION {origIndex + 1}</span>
+            <span className="truncate max-w-[200px]">{currentDoc?.name || 'Document'}</span>
+            <span>Page {pageIndex + 1}</span>
           </div>
 
           <div className="mt-8 space-y-4">
-            <h3 className="text-xl font-bold text-slate-900">
-              {origIndex === 0 ? 'Document Content & Executive Overview' : `Chapter ${origIndex + 1}: Detailed Analysis`}
+            <h3 className="text-lg font-bold text-slate-900">
+              {origIndex === 0 ? 'Document Content' : `Section ${origIndex + 1}`}
             </h3>
 
-            <p className="text-xs text-slate-700 leading-relaxed">
-              {currentDoc?.extractedText ||
-                'This section contains verified document data, body paragraphs, and appendices preserved from your original uploaded file. The accompanying QR code on Page 1 links directly to this soft copy stored on Google Drive.'}
-            </p>
+            {currentDoc?.extractedText ? (
+              <p className="text-xs text-slate-700 leading-relaxed font-sans">
+                {currentDoc.extractedText}
+              </p>
+            ) : (
+              <p className="text-xs text-slate-500 italic">
+                Content from your uploaded file ({currentDoc?.name}). The QR code on Page 1 links directly to this full original document on Google Drive.
+              </p>
+            )}
 
-            <div className="p-4 bg-slate-50 rounded-xl border border-slate-200 space-y-2 mt-6">
-              <span className="text-[10px] font-bold uppercase tracking-wider text-slate-500 block">
-                Original Document Metadata
-              </span>
-              <div className="grid grid-cols-2 gap-2 text-xs text-slate-700">
-                <div>File Type: <span className="font-semibold uppercase">{currentDoc?.extension}</span></div>
-                <div>Size: <span className="font-semibold">{((currentDoc?.size || 0) / 1024).toFixed(1)} KB</span></div>
-                <div>Word Count: <span className="font-semibold">{currentDoc?.wordCount || '~450'} words</span></div>
-                <div>Soft Copy: <span className="font-semibold text-emerald-600">Google Drive Linked</span></div>
-              </div>
+            <div className="p-4 bg-slate-50 rounded-xl border border-slate-200 space-y-1.5 mt-6 text-xs text-slate-600">
+              <div>File: <span className="font-semibold text-slate-800">{currentDoc?.name}</span></div>
+              <div>Format: <span className="font-semibold uppercase text-slate-800">{currentDoc?.extension}</span></div>
+              <div>Soft Copy: <span className="font-semibold text-emerald-600">Drive Cloud Linked</span></div>
             </div>
           </div>
         </div>
 
         {/* Footer */}
-        <div className="border-t border-slate-200 pt-3 flex items-center justify-between text-xs text-slate-500 font-mono">
-          <span>{coverData.organization || 'Apex Global'}</span>
+        <div className="border-t border-slate-200 pt-3 flex items-center justify-between text-xs text-slate-400 font-mono">
+          <span>{coverData.organization || 'Document'}</span>
           <span>Page {pageIndex + 1} of {totalPages}</span>
         </div>
       </div>
@@ -375,9 +389,9 @@ export const CoverPreview: React.FC<CoverPreviewProps> = ({
         <div className="flex items-center gap-2">
           <span className="text-xs font-bold uppercase tracking-wider text-yellow-400 flex items-center gap-1.5">
             <span className="w-2 h-2 rounded-full bg-yellow-400 animate-pulse" />
-            Print Document Preview
+            Live Preview
           </span>
-          <span className="text-xs font-bold px-2 py-0.5 rounded bg-yellow-400 text-black">
+          <span className="text-[11px] font-bold px-2 py-0.5 rounded bg-yellow-400/20 text-yellow-300 border border-yellow-400/30">
             {totalPages} Pages Total
           </span>
         </div>
@@ -430,8 +444,8 @@ export const CoverPreview: React.FC<CoverPreviewProps> = ({
               href={driveLink}
               target="_blank"
               rel="noopener noreferrer"
-              className="inline-flex items-center gap-1.5 px-2.5 py-1 text-xs font-bold bg-emerald-950/60 text-emerald-300 border border-emerald-500/40 rounded-lg hover:bg-emerald-900/60 transition-colors"
-              title="Test the Google Drive link that will open when someone scans this QR"
+              className="inline-flex items-center gap-1 px-2 py-1 text-xs font-bold bg-emerald-950/60 text-emerald-300 border border-emerald-500/40 rounded-lg hover:bg-emerald-900/60 transition-colors"
+              title="Test the Google Drive link that opens when scanning this QR"
             >
               <ExternalLink className="w-3.5 h-3.5" />
               <span className="hidden sm:inline">Drive Link</span>
@@ -457,12 +471,12 @@ export const CoverPreview: React.FC<CoverPreviewProps> = ({
             <div className="flex flex-col items-center">
               <span className="text-[11px] font-bold uppercase tracking-wider text-yellow-400 mb-1.5 flex items-center gap-1">
                 <span className="w-2 h-2 rounded-full bg-yellow-400" />
-                Page 1 • Custom Cover & QR
+                Page 1 • Cover & QR
               </span>
               {renderCoverPage()}
             </div>
 
-            {/* Remaining Pages: Document Content Pages */}
+            {/* Remaining Pages */}
             {Array.from({ length: totalPages - 1 }, (_, i) => i + 1).map((pNum) => (
               <div key={pNum} className="flex flex-col items-center">
                 <span className="text-[11px] font-bold uppercase tracking-wider text-zinc-400 mb-1.5">
@@ -473,14 +487,14 @@ export const CoverPreview: React.FC<CoverPreviewProps> = ({
             ))}
           </div>
         ) : (
-          /* SINGLE PAGE VIEW: Focused on active page */
+          /* SINGLE PAGE VIEW */
           <div className="w-full flex justify-center">
             {activePageIndex === 0 ? renderCoverPage() : renderDocumentPage(activePageIndex)}
           </div>
         )}
       </div>
 
-      {/* Filmstrip / Page Thumbnail Picker */}
+      {/* Filmstrip / Page Thumbnail Navigation */}
       {totalPages > 1 && viewMode === 'single' && (
         <div className="mt-3 py-2 px-1 flex items-center justify-center gap-2 overflow-x-auto scrollbar-none">
           {Array.from({ length: totalPages }, (_, idx) => (
@@ -501,42 +515,32 @@ export const CoverPreview: React.FC<CoverPreviewProps> = ({
         </div>
       )}
 
-      {/* Action Buttons Below Preview */}
-      <div className="mt-4 flex flex-wrap items-center justify-between gap-3 bg-[#121215] p-3.5 rounded-2xl border border-yellow-500/25">
-        <div className="flex items-center gap-2">
-          <span
-            className={`w-2.5 h-2.5 rounded-full ${
-              isDriveUploaded ? 'bg-emerald-400 animate-pulse' : 'bg-yellow-400'
-            }`}
-          />
-          <span className="text-xs font-bold text-white">
-            {isDriveUploaded ? 'Drive Link Active • Public Viewer QR' : 'Local Preview (Upload to Drive for QR)'}
-          </span>
-        </div>
+      {/* Status Bar */}
+      <div className="mt-3 flex items-center justify-between text-xs px-2 py-1 text-zinc-400">
+        <span className="flex items-center gap-1.5">
+          {isDriveUploaded ? (
+            <>
+              <CheckCircle2 className="w-3.5 h-3.5 text-emerald-400" />
+              <span className="text-emerald-400 font-semibold">QR Linked to Public Google Drive File</span>
+            </>
+          ) : (
+            <>
+              <span className="w-2 h-2 rounded-full bg-yellow-400" />
+              <span>Drive QR Ready (Upload in Step 4)</span>
+            </>
+          )}
+        </span>
 
-        <div className="flex items-center gap-2">
+        {onPrint && (
           <button
+            type="button"
             onClick={onPrint}
-            className="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-semibold rounded-xl bg-zinc-800 hover:bg-zinc-700 text-white transition-colors cursor-pointer"
+            className="text-zinc-400 hover:text-yellow-400 flex items-center gap-1 text-[11px] cursor-pointer"
           >
-            <Printer className="w-3.5 h-3.5" />
-            Print All {totalPages} Pages
+            <Printer className="w-3 h-3" />
+            <span>Print View</span>
           </button>
-          <button
-            onClick={onOpenEmailModal}
-            className="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-semibold rounded-xl bg-yellow-400/10 text-yellow-300 hover:bg-yellow-400/20 border border-yellow-400/30 transition-colors cursor-pointer"
-          >
-            <Mail className="w-3.5 h-3.5" />
-            Share Email
-          </button>
-          <button
-            onClick={onOpenExportModal}
-            className="inline-flex items-center gap-1.5 px-4 py-1.5 text-xs font-bold rounded-xl bg-yellow-400 hover:bg-yellow-300 text-black shadow-[0_0_15px_rgba(250,204,21,0.3)] transition-all cursor-pointer"
-          >
-            <Download className="w-3.5 h-3.5 stroke-[2.5]" />
-            Download New Version ({totalPages} Pages)
-          </button>
-        </div>
+        )}
       </div>
     </div>
   );

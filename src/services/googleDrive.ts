@@ -11,36 +11,38 @@ export async function uploadDocumentToDrive(
   onProgress?: (percent: number, status: string) => void
 ): Promise<DriveUploadResult> {
   if (!accessToken) {
-    throw new Error('Access token is required. Please sign in with Google.');
+    throw new Error('Please sign in with Google to connect Google Drive.');
   }
 
-  const mimeType = file.type || 'application/octet-stream';
+  const mimeType = file.type || 'application/pdf';
+  // Standard RFC multipart boundary
+  const boundary = 'DocQRBoundary' + Date.now().toString(16) + Math.random().toString(36).substring(2);
+  const delimiter = `--${boundary}\r\n`;
+  const closeDelimiter = `\r\n--${boundary}--`;
+
   const metadata = {
     name: fileName,
-    description: 'Uploaded via DocQR Cover Generator. Scan QR code to view this soft copy.',
+    description: 'Uploaded via QR-DRIVE. Scan QR code to view this soft copy.',
   };
-
-  const boundary = '-------DocQRBoundary' + Math.random().toString(36).substring(2);
-  const delimiter = `\r\n--${boundary}\r\n`;
-  const closeDelimiter = `\r\n--${boundary}--`;
 
   const metadataPart =
     delimiter +
     'Content-Type: application/json; charset=UTF-8\r\n\r\n' +
     JSON.stringify(metadata) +
+    '\r\n' +
     delimiter +
     `Content-Type: ${mimeType}\r\n\r\n`;
 
   const multipartBody = new Blob(
     [
-      new Blob([metadataPart], { type: 'text/plain' }),
+      new Blob([metadataPart], { type: 'text/plain; charset=UTF-8' }),
       file,
-      new Blob([closeDelimiter], { type: 'text/plain' }),
+      new Blob([closeDelimiter], { type: 'text/plain; charset=UTF-8' }),
     ],
     { type: `multipart/related; boundary=${boundary}` }
   );
 
-  onProgress?.(40, 'Uploading document to Google Drive...');
+  onProgress?.(35, 'Uploading document to Google Drive...');
 
   const uploadResponse = await fetch(
     'https://www.googleapis.com/upload/drive/v3/files?uploadType=multipart&fields=id,name,webViewLink,webContentLink',
@@ -48,6 +50,7 @@ export async function uploadDocumentToDrive(
       method: 'POST',
       headers: {
         Authorization: `Bearer ${accessToken}`,
+        'Content-Type': `multipart/related; boundary=${boundary}`,
       },
       body: multipartBody,
     }
@@ -56,13 +59,28 @@ export async function uploadDocumentToDrive(
   if (!uploadResponse.ok) {
     const errorText = await uploadResponse.text();
     console.error('Drive upload failed:', uploadResponse.status, errorText);
-    throw new Error(`Google Drive upload failed (${uploadResponse.status}): ${errorText}`);
+
+    let friendlyMessage = errorText;
+    try {
+      const errJson = JSON.parse(errorText);
+      const apiMsg = errJson?.error?.message;
+      if (apiMsg) {
+        if (apiMsg.includes('has not been used') || apiMsg.includes('disabled')) {
+          friendlyMessage =
+            'Google Drive API is not enabled on project 245248622910. Enable it at: https://console.developers.google.com/apis/api/drive.googleapis.com/overview?project=245248622910';
+        } else {
+          friendlyMessage = apiMsg;
+        }
+      }
+    } catch {}
+
+    throw new Error(friendlyMessage);
   }
 
   const uploadData = await uploadResponse.json();
   const fileId = uploadData.id;
 
-  onProgress?.(75, 'Configuring Public Viewer permissions for QR scanning...');
+  onProgress?.(70, 'Configuring Public Viewer permissions for QR scanning...');
 
   // Set permission to anyone with link as reader (Public Viewer)
   let publicPermissionGranted = false;
@@ -78,6 +96,7 @@ export async function uploadDocumentToDrive(
         body: JSON.stringify({
           role: 'reader',
           type: 'anyone',
+          allowFileDiscovery: false,
         }),
       }
     );
@@ -85,48 +104,34 @@ export async function uploadDocumentToDrive(
     if (permissionResponse.ok) {
       publicPermissionGranted = true;
     } else {
-      console.warn('Could not set anyone permission, trying with domain or link:', await permissionResponse.text());
+      const permErr = await permissionResponse.text();
+      console.warn('Notice setting anyone permission (might already be public):', permErr);
     }
   } catch (err) {
     console.warn('Error setting permission:', err);
   }
 
-  onProgress?.(95, 'Finalizing public viewer link...');
+  onProgress?.(95, 'Finalizing public viewer URL...');
 
-  // Query file details to get exact webViewLink
-  let finalWebViewLink = uploadData.webViewLink;
-  if (!finalWebViewLink) {
-    try {
-      const getFileRes = await fetch(
-        `https://www.googleapis.com/drive/v3/files/${fileId}?fields=id,name,webViewLink,webContentLink`,
-        {
-          headers: { Authorization: `Bearer ${accessToken}` },
-        }
-      );
-      if (getFileRes.ok) {
-        const fileInfo = await getFileRes.json();
-        finalWebViewLink = fileInfo.webViewLink || `https://drive.google.com/file/d/${fileId}/view?usp=sharing`;
-      }
-    } catch {
-      // Fallback standard drive link format
-      finalWebViewLink = `https://drive.google.com/file/d/${fileId}/view?usp=sharing`;
-    }
-  }
-
-  // Ensure it includes view?usp=sharing so mobile browsers open the viewer cleanly
-  if (finalWebViewLink && !finalWebViewLink.includes('usp=sharing')) {
-    finalWebViewLink = finalWebViewLink.includes('?')
-      ? `${finalWebViewLink}&usp=sharing`
-      : `${finalWebViewLink}?usp=sharing`;
-  }
+  // Standard verified public link that opens on all mobile devices and desktop
+  const verifiedPublicLink = `https://drive.google.com/file/d/${fileId}/view?usp=sharing`;
 
   onProgress?.(100, 'Upload complete!');
 
   return {
     fileId,
     name: uploadData.name || fileName,
-    webViewLink: finalWebViewLink || `https://drive.google.com/file/d/${fileId}/view?usp=sharing`,
+    webViewLink: verifiedPublicLink,
     webContentLink: uploadData.webContentLink,
     publicPermissionGranted,
   };
+}
+
+/**
+ * Validate and clean a Google Drive URL provided manually by user
+ */
+export function extractDriveFileId(url: string): string | null {
+  if (!url) return null;
+  const match = url.match(/\/d\/([a-zA-Z0-9_-]+)/) || url.match(/id=([a-zA-Z0-9_-]+)/);
+  return match ? match[1] : null;
 }

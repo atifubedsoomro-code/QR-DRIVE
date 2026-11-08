@@ -140,7 +140,7 @@ export async function generateCoverPagePdf(
   const layout = theme.layoutStyle;
 
   if (layout === 'banner-top' || layout === 'split-vertical') {
-    const bannerHeight = dims.height * 0.38;
+    const bannerHeight = dims.height * 0.35;
     const bannerY = dims.height - bannerHeight;
 
     // Background color block behind banner
@@ -200,6 +200,20 @@ export async function generateCoverPagePdf(
       borderColor: accentRgb,
       borderWidth: 1,
     });
+  } else if (layout === 'minimal-frame') {
+    const margin = 24;
+    page.drawRectangle({
+      x: margin,
+      y: margin,
+      width: dims.width - margin * 2,
+      height: dims.height - margin * 2,
+      borderColor: accentRgb,
+      borderWidth: 1,
+    });
+    // Corner accent brackets
+    const bracketLen = 20;
+    page.drawLine({ start: { x: margin - 4, y: dims.height - margin + 4 }, end: { x: margin + bracketLen, y: dims.height - margin + 4 }, thickness: 2, color: accentRgb });
+    page.drawLine({ start: { x: margin - 4, y: dims.height - margin + 4 }, end: { x: margin - 4, y: dims.height - margin - bracketLen }, thickness: 2, color: accentRgb });
   } else if (layout === 'geometric-grid') {
     page.drawLine({
       start: { x: 40, y: dims.height - 40 },
@@ -212,6 +226,23 @@ export async function generateCoverPagePdf(
       end: { x: 40, y: 40 },
       thickness: 1,
       color: accentRgb,
+    });
+  } else if (layout === 'bottom-accent') {
+    page.drawRectangle({
+      x: 0,
+      y: 0,
+      width: dims.width,
+      height: 120,
+      color: primaryRgb,
+    });
+  } else if (layout === 'card-centered') {
+    page.drawRectangle({
+      x: 35,
+      y: 40,
+      width: dims.width - 70,
+      height: dims.height - 80,
+      borderColor: accentRgb,
+      borderWidth: 1,
     });
   }
 
@@ -241,7 +272,7 @@ export async function generateCoverPagePdf(
     }
   }
 
-  // Draw Document ID / Reference at top
+  // Draw Document ID / Reference at top ONLY if user entered one
   const topTextY = dims.height - 50;
   if (coverData.documentId) {
     page.drawText(sanitizePdfText(coverData.documentId.toUpperCase()), {
@@ -268,7 +299,7 @@ export async function generateCoverPagePdf(
     layout === 'banner-top' || layout === 'split-vertical' ? dims.height * 0.54 : dims.height * 0.72;
 
   // Title wrapping logic
-  const sanitizedTitle = sanitizePdfText(coverData.title) || 'Untitled Document';
+  const sanitizedTitle = sanitizePdfText(coverData.title) || 'Document';
   const titleWords = sanitizedTitle.split(' ');
   const titleLines: string[] = [];
   let currentLine = '';
@@ -297,7 +328,7 @@ export async function generateCoverPagePdf(
     currentY -= titleFontSize + 8;
   }
 
-  // Subtitle
+  // Subtitle (ONLY if user provided one)
   if (coverData.subtitle) {
     currentY -= 6;
     page.drawText(sanitizePdfText(coverData.subtitle), {
@@ -321,7 +352,7 @@ export async function generateCoverPagePdf(
   });
   currentY -= 24;
 
-  // Metadata block (Prepared By, Date, Summary)
+  // Metadata block (ONLY if provided)
   if (coverData.preparedBy) {
     page.drawText('PREPARED BY', {
       x: 50,
@@ -340,7 +371,7 @@ export async function generateCoverPagePdf(
   }
 
   if (coverData.date) {
-    page.drawText('DATE & VERSION', {
+    page.drawText('DATE', {
       x: 240,
       y: currentY,
       size: 9,
@@ -356,9 +387,11 @@ export async function generateCoverPagePdf(
     });
   }
 
-  currentY -= 45;
+  if (coverData.preparedBy || coverData.date) {
+    currentY -= 45;
+  }
 
-  // Executive summary
+  // Summary (ONLY if user provided one)
   if (coverData.summary) {
     const summaryLines = wrapText(sanitizePdfText(coverData.summary), 60).slice(0, 4);
     for (const sLine of summaryLines) {
@@ -390,7 +423,7 @@ export async function generateCoverPagePdf(
         width: qrSize + 16,
         height: qrSize + 32,
         color: rgb(1, 1, 1),
-        borderColor: hexToPdfRgb('#e2e8f0'),
+        borderColor: hexToPdfRgb('#cbd5e1'),
         borderWidth: 1,
       });
 
@@ -412,7 +445,7 @@ export async function generateCoverPagePdf(
 
       // Call to action banner next to QR
       const ctaWords = wrapText(
-        sanitizePdfText(coverData.qrCallToAction) || 'Scan with phone camera to view and download soft copy.',
+        sanitizePdfText(coverData.qrCallToAction) || 'Scan with phone camera to view full soft copy on Google Drive.',
         36
       );
       let ctaY = qrY + qrSize - 4;

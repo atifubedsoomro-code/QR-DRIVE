@@ -78,7 +78,7 @@ export async function parseUploadedDocument(file: File): Promise<UploadedDocInfo
   };
 }
 
-function cleanFileName(name: string): string {
+export function cleanFileName(name: string): string {
   // Strip extension and dashes/underscores into human readable title
   const withoutExt = name.replace(/\.[^/.]+$/, '');
   const cleaned = withoutExt
@@ -99,15 +99,16 @@ declare global {
 }
 
 /**
- * Render PDF pages onto canvas and return data URLs for multi-page print preview
+ * Render PDF pages onto canvas and return data URLs for multi-page print preview.
+ * Robust against iframe / worker cross-origin issues.
  */
 export async function renderPdfPages(arrayBuffer: ArrayBuffer, maxPages = 12): Promise<string[]> {
   if (typeof window === 'undefined') return [];
 
-  // Wait a moment if pdfjsLib script is still loading in background
+  // Wait a short moment if pdfjsLib script is loading in background
   if (!window.pdfjsLib) {
     let waited = 0;
-    while (!window.pdfjsLib && waited < 15) {
+    while (!window.pdfjsLib && waited < 10) {
       await new Promise((r) => setTimeout(r, 100));
       waited++;
     }
@@ -116,33 +117,44 @@ export async function renderPdfPages(arrayBuffer: ArrayBuffer, maxPages = 12): P
   if (!window.pdfjsLib) return [];
 
   try {
-    window.pdfjsLib.GlobalWorkerOptions.workerSrc =
-      'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js';
+    try {
+      if (window.pdfjsLib.GlobalWorkerOptions) {
+        window.pdfjsLib.GlobalWorkerOptions.workerSrc =
+          'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js';
+      }
+    } catch {}
 
-    // Safely clone ArrayBuffer to prevent detachment
+    // Clone ArrayBuffer safely to avoid detachment
     const safeBuffer = new Uint8Array(arrayBuffer).slice().buffer;
-    const loadingTask = window.pdfjsLib.getDocument({ data: safeBuffer });
+    const loadingTask = window.pdfjsLib.getDocument({
+      data: safeBuffer,
+      useSystemFonts: true,
+    });
+
     const pdf = await loadingTask.promise;
     const totalPages = Math.min(pdf.numPages, maxPages);
     const pageImageUrls: string[] = [];
 
     for (let pageNum = 1; pageNum <= totalPages; pageNum++) {
-      const page = await pdf.getPage(pageNum);
-      const viewport = page.getViewport({ scale: 1.2 });
-      const canvas = document.createElement('canvas');
-      canvas.width = viewport.width;
-      canvas.height = viewport.height;
-      const ctx = canvas.getContext('2d');
-      if (ctx) {
-        await page.render({ canvasContext: ctx, viewport }).promise;
-        pageImageUrls.push(canvas.toDataURL('image/jpeg', 0.85));
+      try {
+        const page = await pdf.getPage(pageNum);
+        const viewport = page.getViewport({ scale: 1.0 });
+        const canvas = document.createElement('canvas');
+        canvas.width = viewport.width;
+        canvas.height = viewport.height;
+        const ctx = canvas.getContext('2d');
+        if (ctx) {
+          await page.render({ canvasContext: ctx, viewport }).promise;
+          pageImageUrls.push(canvas.toDataURL('image/jpeg', 0.85));
+        }
+      } catch (pageErr) {
+        console.warn(`Failed rendering page ${pageNum}:`, pageErr);
       }
     }
 
     return pageImageUrls;
   } catch (err) {
-    console.warn('PDF page rendering error:', err);
+    console.warn('PDF page rendering caught error (safe fallback):', err);
     return [];
   }
 }
-
